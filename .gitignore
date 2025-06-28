@@ -1,0 +1,33 @@
+# Sensitive files
+gcp-oauth.keys.json
+*.keys.json
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# MCP server configs
+.mcp.json
