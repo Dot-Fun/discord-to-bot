@@ -22,16 +22,17 @@ npm start
 ## 🤖 How to Use
 
 The bot responds to:
-- `!claude <your message>` - Ask Claude anything
-- `@BotName <your message>` - Mention the bot
-- `!claude help` - Show help
-- `!claude clear` - Clear conversation history
+- `@Dot <your message>` - Just mention the bot!
+- `@Dot help` - Show help
+- `@Dot clear` - Clear conversation history
 
 ### Examples
 ```
-!claude What is the weather like?
-!claude Write a Python function
-@Claude Help me debug this code
+@Dot What is the weather like?
+@Dot Write a Python function
+@Dot Help me debug this code
+@Dot check my gmail
+@Dot what JIRA tickets are assigned to me?
 ```
 
 ## 📁 Files

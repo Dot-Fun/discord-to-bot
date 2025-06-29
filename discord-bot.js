@@ -1,6 +1,8 @@
 const { Client, GatewayIntentBits, Events, EmbedBuilder } = require('discord.js');
 const { query } = require('@anthropic-ai/claude-code');
 const dotenv = require('dotenv');
+const fs = require('fs');
+const path = require('path');
 
 // Load environment variables
 dotenv.config();
@@ -17,11 +19,26 @@ const client = new Client({
 
 // Configuration
 const CONFIG = {
-    BOT_PREFIX: '!claude',
     MAX_RESPONSE_LENGTH: 2000,
     MAX_CONTEXT_MESSAGES: 10,
-    MAX_TURNS: 1
+    MAX_TURNS: 3, // Increased to allow tool use
+    CWD: process.cwd() // Working directory for Claude to find .mcp.json
 };
+
+// Load allowed tools from settings.json
+let allowedToolsList = [];
+try {
+    const settingsPath = path.join(CONFIG.CWD, '.claude', 'settings.json');
+    if (fs.existsSync(settingsPath)) {
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        if (settings.permissions && settings.permissions.allow) {
+            allowedToolsList = settings.permissions.allow;
+            console.log(`📋 Loaded ${allowedToolsList.length} allowed tools from .claude/settings.json`);
+        }
+    }
+} catch (error) {
+    console.error('⚠️  Could not load .claude/settings.json:', error);
+}
 
 // Track conversations
 const conversations = new Map();
@@ -40,12 +57,24 @@ async function queryClaudeSDK(prompt, context = []) {
         }
         
         console.log('Querying Claude with prompt:', fullPrompt);
+        console.log('Working directory for Claude:', CONFIG.CWD);
         
-        // Query Claude using the SDK
+        // Enable debug mode to see errors
+        process.env.DEBUG = 'true';
+        
+        // Query Claude using the SDK with MCP support
+        // Using 'default' permission mode should respect .claude/settings.json
+        // If this doesn't work, uncomment the allowedTools line below
         for await (const message of query({
             prompt: fullPrompt,
             options: {
-                maxTurns: CONFIG.MAX_TURNS
+                maxTurns: CONFIG.MAX_TURNS,
+                // Enable MCP by setting the working directory
+                cwd: CONFIG.CWD,
+                // Use default permission mode to respect .claude/settings.json
+                permissionMode: 'default',
+                // Uncomment this line if settings.json isn't being respected:
+                // allowedTools: allowedToolsList
             }
         })) {
             messages.push(message);
@@ -53,9 +82,10 @@ async function queryClaudeSDK(prompt, context = []) {
         
         // Extract the response text from messages
         let responseText = '';
+        let toolsUsed = [];
         
         for (const msg of messages) {
-            console.log('Processing message:', JSON.stringify(msg, null, 2));
+            console.log('Processing message type:', msg.type);
             
             // Handle different message types from Claude SDK
             if (msg.type === 'assistant' && msg.message) {
@@ -64,9 +94,17 @@ async function queryClaudeSDK(prompt, context = []) {
                     for (const item of content) {
                         if (item.type === 'text' && item.text) {
                             responseText += item.text + '\n';
+                        } else if (item.type === 'tool_use') {
+                            toolsUsed.push({
+                                name: item.name,
+                                input: item.input
+                            });
                         }
                     }
                 }
+            } else if (msg.type === 'tool_result') {
+                // Log tool results for debugging
+                console.log('Tool result:', msg);
             } else if (typeof msg === 'string') {
                 responseText += msg + '\n';
             }
@@ -119,9 +157,15 @@ client.once(Events.ClientReady, readyClient => {
     console.log(`🤖 Logged in as ${readyClient.user.tag}`);
     console.log(`📊 Connected to ${readyClient.guilds.cache.size} guilds`);
     console.log(`🔐 Using Claude Code SDK with OAuth`);
+    console.log(`🛠️ MCP Tools enabled from .mcp.json`);
+    console.log(`📁 Working directory: ${CONFIG.CWD}`);
+    console.log(`🔒 Permission mode: default (using .claude/settings.json)`);
+    if (allowedToolsList.length > 0) {
+        console.log(`✅ ${allowedToolsList.length} tools allowed from settings.json`);
+    }
     
     // Set activity
-    client.user.setActivity('!claude help', { type: 'LISTENING' });
+    client.user.setActivity('@Dot help | Tools enabled', { type: 'LISTENING' });
 });
 
 // Message handler
@@ -129,30 +173,32 @@ client.on(Events.MessageCreate, async message => {
     // Ignore bots
     if (message.author.bot) return;
     
-    // Check for bot mention or prefix
+    // Check for bot mention only
     const isMentioned = message.mentions.has(client.user);
-    const hasPrefix = message.content.toLowerCase().startsWith(CONFIG.BOT_PREFIX);
     
-    if (!isMentioned && !hasPrefix) return;
+    // If not mentioned, ignore
+    if (!isMentioned) return;
     
-    // Extract query
-    let userQuery = message.content;
-    if (hasPrefix) {
-        userQuery = message.content.slice(CONFIG.BOT_PREFIX.length).trim();
-    } else if (isMentioned) {
-        userQuery = message.content.replace(/<@!?\d+>/g, '').trim();
-    }
+    // Extract query by removing the mention
+    let userQuery = message.content.replace(/<@!?\d+>/g, '').trim();
     
     // Handle special commands
     if (userQuery.toLowerCase() === 'help') {
         const helpEmbed = new EmbedBuilder()
             .setColor(0x5865F2)
             .setTitle('🤖 Claude Discord Bot Help')
-            .setDescription('I use Claude AI to answer your questions!')
+            .setDescription('I use Claude AI with MCP tools to help you!')
             .addFields(
-                { name: '💬 Usage', value: '`!claude <question>` or mention me', inline: false },
-                { name: '🧹 Clear', value: '`!claude clear` - Reset conversation', inline: false },
-                { name: '🔐 Auth', value: 'Using Claude Code SDK with OAuth', inline: false }
+                { name: '💬 Usage', value: '`@Dot <question>` - Just mention me!', inline: false },
+                { name: '🧹 Clear', value: '`@Dot clear` - Reset conversation', inline: false },
+                { name: '🛠️ Available Tools', value: 'Discord, JIRA, Confluence, Gmail, Google Calendar, Google Drive', inline: false },
+                { name: '📝 Examples', value: 
+                    '`@Dot check my gmail`\n' +
+                    '`@Dot what JIRA tickets are assigned to me?`\n' +
+                    '`@Dot search google drive for project docs`\n' +
+                    '`@Dot send a discord message to #general`', 
+                    inline: false 
+                }
             )
             .setTimestamp();
         
@@ -167,7 +213,7 @@ client.on(Events.MessageCreate, async message => {
     }
     
     if (!userQuery) {
-        await message.reply('Hi! I\'m Claude. Ask me anything!');
+        await message.reply('Hi! I\'m Dot, powered by Claude AI. Just mention me with your question!');
         return;
     }
     
@@ -181,8 +227,12 @@ client.on(Events.MessageCreate, async message => {
         const channelId = message.channel.id;
         let context = conversations.get(channelId) || [];
         
-        // Format the query with user info
-        const formattedQuery = `[${message.author.username}]: ${userQuery}`;
+        // Format the query with user info and context about Discord
+        const formattedQuery = `[${message.author.username}]: ${userQuery}
+        
+Context: You are in Discord server "${message.guild?.name || 'DM'}" in channel #${message.channel.name || 'DM'}.
+You have access to MCP tools for Discord, JIRA, Confluence, Gmail, Google Calendar, and Google Drive.
+Feel free to use these tools to help answer the user's request.`;
         
         // Query Claude
         const response = await queryClaudeSDK(formattedQuery, context);
