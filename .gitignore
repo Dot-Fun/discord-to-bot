@@ -1,9 +1,11 @@
 # Sensitive files
 gcp-oauth.keys.json
 *.keys.json
+.gdrive-server-credentials.json
 .env
 .env.*
 !.env.example
+.claude/settings.local.json
 
 # Dependencies
 node_modules/

@@ -4,12 +4,31 @@
   "description": "Jira management tools with Discord integration",
   "main": "index.js",
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "start": "node discord-bot.js",
+    "dev": "node --watch discord-bot.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "husky": "^9.1.7"
+  },
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dot-Fun/discord-to-bot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Dot-Fun/discord-to-bot/issues"
+  },
+  "homepage": "https://github.com/Dot-Fun/discord-to-bot#readme",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^1.0.35",
+    "@anthropic-ai/sdk": "^0.55.0",
+    "discord.js": "^14.21.0",
+    "dotenv": "^17.0.0"
   }
 }
