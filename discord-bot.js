@@ -43,10 +43,8 @@ try {
 // Track conversations
 const conversations = new Map();
 
-// Helper: Query Claude using the SDK
-async function queryClaudeSDK(prompt, context = []) {
-    const messages = [];
-    
+// Helper: Query Claude using the SDK with streaming
+async function queryClaudeSDK(prompt, context = [], originalMessage) {
     try {
         // Build the full prompt with context
         let fullPrompt = prompt;
@@ -62,64 +60,92 @@ async function queryClaudeSDK(prompt, context = []) {
         // Enable debug mode to see errors
         process.env.DEBUG = 'true';
         
-        // Query Claude using the SDK with MCP support
-        // Using 'default' permission mode should respect .claude/settings.json
-        // If this doesn't work, uncomment the allowedTools line below
-        for await (const message of query({
-            prompt: fullPrompt,
-            options: {
-                maxTurns: CONFIG.MAX_TURNS,
-                // Enable MCP by setting the working directory
-                cwd: CONFIG.CWD,
-                // Use default permission mode to respect .claude/settings.json
-                permissionMode: 'default',
-                // Uncomment this line if settings.json isn't being respected:
-                // allowedTools: allowedToolsList
+        // Keep track of Discord messages for streaming
+        let responseMessage = null;
+        let currentContent = '';
+        let isProcessing = true;
+        
+        // Send typing indicator periodically while processing
+        const typingInterval = setInterval(() => {
+            if (isProcessing) {
+                originalMessage.channel.sendTyping();
             }
-        })) {
-            messages.push(message);
-        }
+        }, 5000);
         
-        // Extract the response text from messages
-        let responseText = '';
-        let toolsUsed = [];
-        
-        for (const msg of messages) {
-            console.log('Processing message type:', msg.type);
-            
-            // Handle different message types from Claude SDK
-            if (msg.type === 'assistant' && msg.message) {
-                const content = msg.message.content;
-                if (Array.isArray(content)) {
-                    for (const item of content) {
-                        if (item.type === 'text' && item.text) {
-                            responseText += item.text + '\n';
-                        } else if (item.type === 'tool_use') {
-                            toolsUsed.push({
-                                name: item.name,
-                                input: item.input
-                            });
+        try {
+            // Query Claude using the SDK with MCP support
+            // Using 'default' permission mode should respect .claude/settings.json
+            for await (const msg of query({
+                prompt: fullPrompt,
+                options: {
+                    maxTurns: CONFIG.MAX_TURNS,
+                    // Enable MCP by setting the working directory
+                    cwd: CONFIG.CWD,
+                    // Use default permission mode to respect .claude/settings.json
+                    permissionMode: 'default',
+                    // Uncomment this line if settings.json isn't being respected:
+                    // allowedTools: allowedToolsList
+                }
+            })) {
+                console.log('Streaming message type:', msg.type);
+                
+                // Handle different message types from Claude SDK
+                if (msg.type === 'assistant' && msg.message) {
+                    const content = msg.message.content;
+                    if (Array.isArray(content)) {
+                        for (const item of content) {
+                            if (item.type === 'text' && item.text) {
+                                // Add text to current content
+                                currentContent += item.text + '\n';
+                                
+                                // Send or update Discord message
+                                if (!responseMessage) {
+                                    // Send initial message
+                                    responseMessage = await originalMessage.reply(item.text);
+                                } else if (currentContent.length < CONFIG.MAX_RESPONSE_LENGTH) {
+                                    // Edit existing message if under limit
+                                    await responseMessage.edit(currentContent.trim());
+                                } else {
+                                    // Send follow-up message if too long
+                                    await originalMessage.channel.send(item.text);
+                                }
+                            } else if (item.type === 'tool_use') {
+                                // Notify about tool usage
+                                const toolMessage = `🔧 Using tool: ${item.name}...`;
+                                if (!responseMessage) {
+                                    responseMessage = await originalMessage.reply(toolMessage);
+                                } else {
+                                    await originalMessage.channel.send(toolMessage);
+                                }
+                            }
                         }
                     }
+                } else if (msg.type === 'tool_result') {
+                    // Log tool results
+                    console.log('Tool completed:', msg);
+                    
+                    // Send a status update
+                    if (msg.tool_use_id) {
+                        await originalMessage.channel.send('✅ Tool completed');
+                    }
+                } else if (msg.type === 'error') {
+                    // Handle error messages
+                    const errorMsg = `❌ Error: ${msg.error || 'Unknown error'}`;
+                    await originalMessage.channel.send(errorMsg);
                 }
-            } else if (msg.type === 'tool_result') {
-                // Log tool results for debugging
-                console.log('Tool result:', msg);
-            } else if (typeof msg === 'string') {
-                responseText += msg + '\n';
             }
+        } finally {
+            // Stop typing indicator
+            isProcessing = false;
+            clearInterval(typingInterval);
         }
         
-        responseText = responseText.trim();
-        console.log('Extracted response:', responseText);
-        
-        // If we couldn't extract a response, try to be helpful
-        if (!responseText) {
-            console.log('All messages:', JSON.stringify(messages, null, 2));
-            responseText = "I'm processing your request...";
+        // If no response was sent, send a default message
+        if (!responseMessage && !currentContent) {
+            return "I'm processing your request...";
         }
         
-        return responseText;
+        return currentContent.trim();
         
     } catch (error) {
         console.error('Error querying Claude:', error);
@@ -230,41 +256,32 @@ client.on(Events.MessageCreate, async message => {
         // Format the query with user info and context about Discord
         const formattedQuery = `[${message.author.username}]: ${userQuery}
         
-Context: You are in Discord server "${message.guild?.name || 'DM'}" in channel #${message.channel.name || 'DM'}.
+Context: You are in Discord server "${message.guild?.name || 'DM'}" (ID: ${message.guild?.id || 'DM'}) in channel #${message.channel.name || 'DM'} (ID: ${message.channel.id}).
+Server ID: ${message.guild?.id || 'N/A'}
+Channel ID: ${message.channel.id}
+User ID: ${message.author.id}
 You have access to MCP tools for Discord, JIRA, Confluence, Gmail, Google Calendar, and Google Drive.
-Feel free to use these tools to help answer the user's request.`;
+When using Discord MCP tools, use these IDs directly.`;
         
-        // Query Claude
-        const response = await queryClaudeSDK(formattedQuery, context);
+        // Query Claude - this will now handle streaming internally
+        const response = await queryClaudeSDK(formattedQuery, context, message);
         
-        if (!response) {
-            throw new Error('Received empty response from Claude');
-        }
-        
-        // Update context
-        context.push(
-            { role: message.author.username, content: userQuery },
-            { role: 'Claude', content: response }
-        );
-        
-        // Keep only last N messages
-        if (context.length > CONFIG.MAX_CONTEXT_MESSAGES * 2) {
-            context = context.slice(-CONFIG.MAX_CONTEXT_MESSAGES * 2);
-        }
-        
-        conversations.set(channelId, context);
-        
-        // Send response
-        const chunks = splitMessage(response);
-        for (let i = 0; i < chunks.length; i++) {
-            if (i === 0) {
-                await message.reply(chunks[i]);
-            } else {
-                await message.channel.send(chunks[i]);
+        // Update context with the final response
+        if (response) {
+            context.push(
+                { role: message.author.username, content: userQuery },
+                { role: 'Claude', content: response }
+            );
+            
+            // Keep only last N messages
+            if (context.length > CONFIG.MAX_CONTEXT_MESSAGES * 2) {
+                context = context.slice(-CONFIG.MAX_CONTEXT_MESSAGES * 2);
             }
+            
+            conversations.set(channelId, context);
         }
         
-        console.log(`✅ Response sent successfully`);
+        console.log(`✅ Streaming completed`);
         
     } catch (error) {
         console.error('❌ Error:', error);
