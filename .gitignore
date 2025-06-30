@@ -33,3 +33,10 @@ logs/
 
 # MCP server configs
 .mcp.json
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Session data
+session-mappings.json

@@ -6,13 +6,21 @@
   "scripts": {
     "prepare": "husky",
     "start": "node discord-bot.js",
-    "dev": "node --watch discord-bot.js"
+    "dev": "node --watch discord-bot.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:verbose": "jest --verbose --coverage",
+    "test:unit": "jest tests/session-manager.test.js",
+    "test:integration": "jest tests/session-integration.test.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "husky": "^9.1.7"
+    "@types/jest": "^30.0.0",
+    "husky": "^9.1.7",
+    "jest": "^30.0.3"
   },
   "directories": {
     "doc": "docs"
