@@ -1,0 +1,40 @@
+{
+  "version": "1.0.0",
+  "channelId": "1334285517562580992",
+  "channelName": "daily-standup",
+  "inherits": "base-context.json",
+  "purpose": "Daily team standup updates and blockers",
+  "context": {
+    "standup": {
+      "format": {
+        "yesterday": "What I completed yesterday",
+        "today": "What I'm working on today",
+        "blockers": "Any blockers or help needed"
+      },
+      "schedule": "Daily at 9:00 AM PST",
+      "participants": ["alvin", "david", "adnan"]
+    },
+    "jira": {
+      "queries": {
+        "myYesterdayWork": "assignee = currentUser() AND updatedDate >= -1d",
+        "myTodayWork": "assignee = currentUser() AND status in ('In Progress', 'Ready')",
+        "blockedIssues": "assignee = currentUser() AND status = 'Blocked'"
+      }
+    },
+    "automation": {
+      "generateSummary": true,
+      "checkMissingUpdates": true,
+      "reminderTime": "8:45 AM PST"
+    }
+  },
+  "behavior": {
+    "formatStandups": true,
+    "trackAttendance": true,
+    "summarizeBlockers": true
+  },
+  "templates": {
+    "standupReminder": "🔔 Daily standup in 15 minutes! Please prepare your updates.",
+    "missedStandup": "⚠️ {user} - Please provide your standup update when you're available.",
+    "standupSummary": "📊 Standup Summary:\n✅ Completed: {completed}\n🚀 In Progress: {inProgress}\n🚧 Blockers: {blockers}"
+  }
+}

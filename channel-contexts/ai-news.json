@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "channelId": "1319782530249003100",
+  "channelName": "ai-news",
+  "inherits": "base-context.json",
+  "purpose": "AI and technology news discussion",
+  "context": {
+    "discord": {
+      "allowedMentions": ["@everyone", "@here"],
+      "messageHistory": {
+        "keepLast": 50,
+        "contextWindow": 10
+      }
+    },
+    "topics": {
+      "primary": ["AI", "Machine Learning", "Technology", "Development"],
+      "related": ["JIRA", "Project Management", "Team Updates"]
+    },
+    "crossReferences": {
+      "jiraUpdates": "1356680542489415902",
+      "jiraTickets": "1356680520586760544",
+      "homeBase": "1306745935895728276"
+    }
+  },
+  "behavior": {
+    "proactive": true,
+    "suggestRelatedChannels": true,
+    "summarizeThreads": true
+  }
+}

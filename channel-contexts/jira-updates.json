@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "channelId": "1356680542489415902",
+  "channelName": "jira-updates",
+  "inherits": "base-context.json",
+  "purpose": "Automated JIRA update notifications",
+  "context": {
+    "jira": {
+      "instance": "https://dotfun.atlassian.net",
+      "defaultProject": "DOT",
+      "notificationTypes": [
+        "issue_created",
+        "issue_updated",
+        "issue_transitioned",
+        "comment_added",
+        "sprint_started",
+        "sprint_completed"
+      ]
+    },
+    "automation": {
+      "postUpdates": true,
+      "mentionAssignee": true,
+      "includeLinks": true
+    },
+    "formatting": {
+      "useEmbeds": true,
+      "colorCoding": {
+        "created": "#00FF00",
+        "updated": "#0099FF",
+        "completed": "#9932CC",
+        "blocked": "#FF0000"
+      }
+    }
+  },
+  "quickResponses": {
+    "ticketCreated": "✅ New ticket created: {key} - {summary}",
+    "ticketUpdated": "📝 Ticket updated: {key}",
+    "ticketCompleted": "🎉 Ticket completed: {key}",
+    "sprintStarted": "🚀 Sprint {name} has started!"
+  }
+}

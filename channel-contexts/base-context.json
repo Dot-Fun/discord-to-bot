@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "type": "base",
+  "description": "Base context inherited by all channels",
+  "commands": {
+    "help": "Show available commands",
+    "clear": "Reset conversation history",
+    "debug": "Show recent errors",
+    "status": "Show bot status",
+    "refresh-context": "Reload channel context"
+  },
+  "tools": {
+    "available": [
+      "Discord",
+      "JIRA",
+      "Confluence",
+      "Gmail",
+      "Google Calendar",
+      "Google Drive"
+    ]
+  },
+  "conventions": {
+    "storyPoints": "1 point = 1 hour",
+    "sprintDuration": "2 weeks",
+    "responses": {
+      "style": "concise",
+      "maxLength": 2000
+    }
+  }
+}

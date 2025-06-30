@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "type": "template",
+  "inherits": "base-context.json",
+  "purpose": "Template for project-specific channels",
+  "context": {
+    "project": {
+      "name": "{PROJECT_NAME}",
+      "jiraProject": "{JIRA_KEY}",
+      "channels": {
+        "lookGood": "{LOOK_GOOD_ID}",
+        "feelGood": "{FEEL_GOOD_ID}",
+        "runGood": "{RUN_GOOD_ID}"
+      }
+    },
+    "team": {
+      "lead": "{LEAD_DISCORD_ID}",
+      "members": []
+    },
+    "workflow": {
+      "statusUpdates": "feelGood",
+      "deployments": "runGood",
+      "design": "lookGood"
+    }
+  },
+  "projectSpecific": {
+    "jiraFilters": {
+      "projectIssues": "project = {JIRA_KEY} AND sprint in openSprints()",
+      "myProjectWork": "project = {JIRA_KEY} AND assignee = currentUser()"
+    },
+    "notifications": {
+      "criticalUpdates": true,
+      "dailyStandup": false
+    }
+  }
+}
