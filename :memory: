@@ -1,0 +1,148 @@
+{
+  "version": "1.0",
+  "savedAt": "2025-06-30T20:41:06.814Z",
+  "sessions": [
+    [
+      "channel1",
+      {
+        "sessionId": "session1",
+        "lastActivity": 1751316066811
+      }
+    ],
+    [
+      "channel2",
+      {
+        "sessionId": "session2",
+        "lastActivity": 1751316066811
+      }
+    ],
+    [
+      "channel3",
+      {
+        "sessionId": "session3",
+        "lastActivity": 1751316066811
+      }
+    ],
+    [
+      "old1",
+      {
+        "sessionId": "old-1",
+        "lastActivity": 1750452066802
+      }
+    ],
+    [
+      "new1",
+      {
+        "sessionId": "new-1",
+        "lastActivity": 1751316066802
+      }
+    ],
+    [
+      "old2",
+      {
+        "sessionId": "old-2",
+        "lastActivity": 1750624866802
+      }
+    ],
+    [
+      "test-channel",
+      {
+        "sessionId": "test-session",
+        "lastActivity": 1751316066809,
+        "messageCount": 10
+      }
+    ],
+    [
+      "ch1",
+      {
+        "sessionId": "sess1",
+        "lastActivity": 1751316066813
+      }
+    ],
+    [
+      "ch2",
+      {
+        "sessionId": "sess2",
+        "lastActivity": 1751316066813
+      }
+    ],
+    [
+      "ch3",
+      {
+        "sessionId": "sess3",
+        "lastActivity": 1751316066813
+      }
+    ],
+    [
+      "channel0",
+      {
+        "sessionId": "session0",
+        "lastActivity": 1751316066811
+      }
+    ],
+    [
+      "channel4",
+      {
+        "sessionId": "session4",
+        "lastActivity": 1751316066811
+      }
+    ],
+    [
+      "channel5",
+      {
+        "sessionId": "session5",
+        "lastActivity": 1751316066811
+      }
+    ],
+    [
+      "channel6",
+      {
+        "sessionId": "session6",
+        "lastActivity": 1751316066811
+      }
+    ],
+    [
+      "channel7",
+      {
+        "sessionId": "session7",
+        "lastActivity": 1751316066811
+      }
+    ],
+    [
+      "channel8",
+      {
+        "sessionId": "session8",
+        "lastActivity": 1751316066811
+      }
+    ],
+    [
+      "channel9",
+      {
+        "sessionId": "session9",
+        "lastActivity": 1751316066811
+      }
+    ],
+    [
+      "ch0",
+      {
+        "sessionId": "sess0",
+        "lastActivity": 1751316066812
+      }
+    ],
+    [
+      "ch4",
+      {
+        "sessionId": "sess4",
+        "lastActivity": 1751316066813
+      }
+    ],
+    [
+      "resume-test",
+      {
+        "sessionId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "lastActivity": 1750624866814,
+        "messageCount": 10
+      }
+    ]
+  ]
+}

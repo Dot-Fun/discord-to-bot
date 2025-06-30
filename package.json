@@ -6,13 +6,19 @@
   "scripts": {
     "prepare": "husky",
     "start": "node discord-bot.js",
-    "dev": "node --watch discord-bot.js"
+    "dev": "node --watch discord-bot.js",
+    "test": "NODE_ENV=test jest",
+    "test:watch": "NODE_ENV=test jest --watch",
+    "test:coverage": "NODE_ENV=test jest --coverage"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "husky": "^9.1.7"
+    "@types/jest": "^30.0.0",
+    "husky": "^9.1.7",
+    "jest": "^30.0.3",
+    "jest-environment-node": "^30.0.2"
   },
   "directories": {
     "doc": "docs"

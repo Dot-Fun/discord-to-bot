@@ -33,3 +33,9 @@ logs/
 
 # MCP server configs
 .mcp.json
+
+# Test coverage
+coverage/
+
+# Temporary files
+:memory:
