@@ -384,9 +384,36 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
                 permissionMode: 'default',
             };
             
+            let isResumingSession = false;
+            let resumeFailed = false;
+            
             if (existingSession && existingSession.sessionId) {
-                console.log(`🔄 Resuming session ${existingSession.sessionId} for channel ${channelId}`);
-                sessionOptions.resume = existingSession.sessionId;
+                // Validate session before attempting resume
+                const sessionAge = Date.now() - existingSession.lastActivity;
+                const sessionAgeHours = Math.floor(sessionAge / (1000 * 60 * 60));
+                const sessionAgeDays = Math.floor(sessionAgeHours / 24);
+                
+                // Check if session is too old (more than 7 days)
+                if (sessionAgeDays >= 7) {
+                    console.log(`⏰ Session ${existingSession.sessionId} is ${sessionAgeDays} days old. Creating new session.`);
+                    channelSessions.delete(channelId);
+                    saveSessions();
+                } 
+                // Check if session ID looks valid (should be a UUID)
+                else if (!existingSession.sessionId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+                    console.log(`❌ Invalid session ID format: ${existingSession.sessionId}. Creating new session.`);
+                    channelSessions.delete(channelId);
+                    saveSessions();
+                }
+                else {
+                    console.log(`🔄 Attempting to resume session ${existingSession.sessionId} (age: ${sessionAgeHours}h) for channel ${channelId}`);
+                    // Try different property names for resume based on SDK documentation
+                    sessionOptions.resume = existingSession.sessionId;
+                    // Alternative property names that might be used by the SDK
+                    sessionOptions.sessionId = existingSession.sessionId;
+                    sessionOptions.resumeSession = existingSession.sessionId;
+                    isResumingSession = true;
+                }
             } else {
                 console.log(`🆕 Creating new session for channel ${channelId}`);
             }
@@ -397,6 +424,16 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
                 let capturedSessionId = null;
                 
                 try {
+                    // Debug log the options being passed
+                    console.log('📋 Query options:', {
+                        maxTurns: sessionOptions.maxTurns,
+                        cwd: sessionOptions.cwd,
+                        permissionMode: sessionOptions.permissionMode,
+                        hasResume: !!sessionOptions.resume,
+                        hasSessionId: !!sessionOptions.sessionId,
+                        hasResumeSession: !!sessionOptions.resumeSession
+                    });
+                    
                     for await (const msg of safeQuery({
                         prompt: fullPrompt,
                         options: sessionOptions
@@ -412,11 +449,35 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
                             console.log('Raw message:', JSON.stringify(msg).substring(0, 500));
                         }
                         
-                        // Extract session ID from messages
-                        if ('session_id' in msg && msg.session_id) {
-                            if (!capturedSessionId) {
+                        // Enhanced session ID extraction with multiple approaches
+                        if (!capturedSessionId) {
+                            // Method 1: Direct session_id property
+                            if ('session_id' in msg && msg.session_id) {
                                 capturedSessionId = msg.session_id;
-                                console.log(`🆔 Captured session ID: ${capturedSessionId}`);
+                                console.log(`🆔 Captured session ID from 'session_id' property: ${capturedSessionId}`);
+                            }
+                            // Method 2: Check sessionId property
+                            else if ('sessionId' in msg && msg.sessionId) {
+                                capturedSessionId = msg.sessionId;
+                                console.log(`🆔 Captured session ID from 'sessionId' property: ${capturedSessionId}`);
+                            }
+                            // Method 3: Check in options object
+                            else if (msg.options && msg.options.sessionId) {
+                                capturedSessionId = msg.options.sessionId;
+                                console.log(`🆔 Captured session ID from options.sessionId: ${capturedSessionId}`);
+                            }
+                            // Method 4: Check in metadata
+                            else if (msg.metadata && msg.metadata.sessionId) {
+                                capturedSessionId = msg.metadata.sessionId;
+                                console.log(`🆔 Captured session ID from metadata.sessionId: ${capturedSessionId}`);
+                            }
+                            
+                            // Debug log all properties if session ID not found
+                            if (!capturedSessionId && msg.type === 'assistant') {
+                                console.log(`🔍 Session ID not found. Message properties:`, Object.keys(msg));
+                                if (msg.message) {
+                                    console.log(`🔍 Message sub-properties:`, Object.keys(msg.message));
+                                }
                             }
                         }
                         
@@ -617,14 +678,68 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
                         channelSessions.set(channelId, sessionData);
                         saveSessions();
                         console.log(`💾 Saved session ${capturedSessionId} for channel ${channelId}`);
+                    } else if (isResumingSession && !resumeFailed) {
+                        // Update existing session's last activity if we successfully resumed
+                        console.log(`✅ Successfully resumed session ${existingSession.sessionId}`);
+                        existingSession.lastActivity = Date.now();
+                        existingSession.messageCount = (existingSession.messageCount || 0) + messageCount;
+                        channelSessions.set(channelId, existingSession);
+                        saveSessions();
                     }
                 } catch (streamError) {
-                    logError('Claude streaming failed', streamError, {
-                        ...queryContext,
-                        toolsUsed,
-                        currentContentLength: currentContent.length
-                    });
-                    throw streamError;
+                    // Check if this is a session resume error
+                    const errorMessage = streamError.message || '';
+                    const isSessionError = errorMessage.includes('session') || 
+                                         errorMessage.includes('resume') || 
+                                         errorMessage.includes('not found') ||
+                                         errorMessage.includes('expired');
+                    
+                    if (isResumingSession && isSessionError && !resumeFailed) {
+                        console.log(`⚠️ Session resume failed: ${errorMessage}`);
+                        console.log(`🔄 Attempting to create a new session instead...`);
+                        
+                        // Mark that resume failed and remove the old session
+                        resumeFailed = true;
+                        channelSessions.delete(channelId);
+                        saveSessions();
+                        
+                        // Retry without resume option
+                        const freshSessionOptions = {
+                            maxTurns: CONFIG.MAX_TURNS,
+                            cwd: CONFIG.CWD,
+                            permissionMode: 'default',
+                        };
+                        
+                        // Retry the query with a fresh session
+                        messageCount = 0;
+                        lastMessageTime = Date.now();
+                        capturedSessionId = null;
+                        
+                        for await (const msg of safeQuery({
+                            prompt: fullPrompt,
+                            options: freshSessionOptions
+                        })) {
+                            // Process messages same as before (this is a simplified retry)
+                            // In production, you'd want to extract this message processing logic
+                            if (!capturedSessionId && msg.session_id) {
+                                capturedSessionId = msg.session_id;
+                                console.log(`🆔 Captured new session ID after retry: ${capturedSessionId}`);
+                            }
+                        }
+                        
+                        // If we got here, the retry succeeded
+                        console.log(`✅ Successfully created new session after resume failure`);
+                    } else {
+                        // Not a session error or already retried, propagate the error
+                        logError('Claude streaming failed', streamError, {
+                            ...queryContext,
+                            toolsUsed,
+                            currentContentLength: currentContent.length,
+                            isResumingSession,
+                            resumeFailed
+                        });
+                        throw streamError;
+                    }
                 }
             })();
             

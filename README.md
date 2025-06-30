@@ -21,7 +21,7 @@ npm start
 
 ## ✨ Features
 
-- **Persistent Sessions** - Conversations continue across bot restarts with Claude's session management
+- **Persistent Sessions** - Hybrid session management: uses Claude's built-in sessions with custom channel-to-session mapping, ensuring each Discord channel maintains its own independent conversation context
 - **JIRA Integration** - Create, view, and manage JIRA tickets with interactive previews
 - **MCP Tools** - Access to Discord, JIRA, Confluence, Gmail, Google Calendar, and Google Drive
 - **Smart Context** - Channel-specific contexts and automatic message history inclusion
