@@ -1421,6 +1421,7 @@ ${contextSummary}
 ${jiraContextSummary}
 ## Instructions
 You have access to MCP tools. Use the context above to understand the conversation and avoid unnecessary API calls.
+When mentioning JIRA tickets, files, or resources, include clickable links (e.g., https://dotfun.atlassian.net/browse/DOT-123).
 ${jiraContextData ? 'JIRA context has been preloaded - use it to create tickets directly without discovery.' : ''}`;
         
         // Check if this is a ticket creation request
