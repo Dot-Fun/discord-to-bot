@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "savedAt": "2025-06-30T01:58:55.421Z",
+  "savedAt": "2025-06-30T02:20:55.835Z",
   "sessions": [
     [
       "1319782530249003100",
@@ -15,10 +15,20 @@
     [
       "1358829971480510555",
       {
-        "sessionId": "6efa40a7-1f81-4d61-8d88-c633301aaad6",
-        "lastActivity": 1751248735421,
-        "messageCount": 15,
+        "sessionId": "5756b143-b0c9-4b81-bef5-1035760f1227",
+        "lastActivity": 1751249319111,
+        "messageCount": 12,
         "channelName": "Video 1: The Doom Loop",
+        "guildName": "DotFun"
+      }
+    ],
+    [
+      "1306745935895728276",
+      {
+        "sessionId": "35577f18-0740-41d7-aa69-c6099d64363f",
+        "lastActivity": 1751250055835,
+        "messageCount": 4,
+        "channelName": "home-base",
         "guildName": "DotFun"
       }
     ]

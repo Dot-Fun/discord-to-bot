@@ -335,6 +335,8 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
         
         // Keep track of Discord messages for streaming
         let responseMessage = null;
+        let statusMessage = null;
+        let statusMessageDeleted = false;
         let currentContent = '';
         let isProcessing = true;
         let toolsUsed = [];
@@ -440,16 +442,26 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
                                             timestamp: new Date().toISOString()
                                         });
                                         
-                                        // Notify about tool usage
-                                        const toolMessage = `🔧 Using tool: ${item.name}...`;
+                                        // Update status message instead of spamming chat
                                         try {
-                                            if (!responseMessage) {
-                                                responseMessage = await originalMessage.reply(toolMessage);
+                                            const statusEmbed = new EmbedBuilder()
+                                                .setColor(0x5865F2)
+                                                .setTitle('⚡ Working...')
+                                                .setDescription(`Currently using: **${item.name}**`)
+                                                .addFields(
+                                                    { name: '🛠️ Tools Used', value: toolsUsed.map(t => `• ${t.name}`).join('\n') || 'Starting...', inline: true },
+                                                    { name: '📊 Progress', value: `${toolsUsed.length + 1} operations`, inline: true }
+                                                )
+                                                .setFooter({ text: 'Processing your request...' })
+                                                .setTimestamp();
+                                            
+                                            if (!statusMessage) {
+                                                statusMessage = await originalMessage.channel.send({ embeds: [statusEmbed] });
                                             } else {
-                                                await originalMessage.channel.send(toolMessage);
+                                                await statusMessage.edit({ embeds: [statusEmbed] });
                                             }
                                         } catch (discordError) {
-                                            logError('Failed to send tool notification', discordError, {
+                                            logError('Failed to update status message', discordError, {
                                                 ...queryContext,
                                                 tool: item.name
                                             });
@@ -504,12 +516,23 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
                                 }
                             } else {
                                 // Send success notification for important tools
-                                if (msg.output && msg.output.length > 0) {
+                                // Tool completed - update status instead of sending new message
+                                if (statusMessage) {
                                     try {
-                                        const resultMsg = `✅ Tool completed successfully`;
-                                        await originalMessage.channel.send(resultMsg);
+                                        const completedEmbed = new EmbedBuilder()
+                                            .setColor(0x00FF00)
+                                            .setTitle('⚡ Processing...')
+                                            .setDescription('Analyzing results...')
+                                            .addFields(
+                                                { name: '🛠️ Tools Used', value: toolsUsed.map(t => `✅ ${t.name}`).join('\n') || 'None', inline: true },
+                                                { name: '📊 Operations', value: `${toolsUsed.length} completed`, inline: true }
+                                            )
+                                            .setFooter({ text: 'Almost done...' })
+                                            .setTimestamp();
+                                        
+                                        await statusMessage.edit({ embeds: [completedEmbed] });
                                     } catch (discordError) {
-                                        console.error('Failed to send tool success notification:', discordError);
+                                        console.error('Failed to update status on completion:', discordError);
                                     }
                                 }
                             }
@@ -551,6 +574,21 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
                     }
                     // Log when streaming actually completes
                     console.log(`✅ Streaming completed - ${messageCount} messages processed`);
+                    
+                    // Delete status message after a short delay
+                    if (statusMessage && !statusMessageDeleted) {
+                        statusMessageDeleted = true;
+                        setTimeout(async () => {
+                            try {
+                                await statusMessage.delete();
+                            } catch (e) {
+                                // Only log if it's not an "Unknown Message" error
+                                if (!e.message?.includes('Unknown Message')) {
+                                    console.error('Failed to delete status message:', e);
+                                }
+                            }
+                        }, 2000); // Delete after 2 seconds
+                    }
                     
                     // Save session information
                     if (capturedSessionId) {
@@ -613,6 +651,21 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
             // Stop typing indicator
             isProcessing = false;
             clearInterval(typingInterval);
+            
+            // Clean up status message if not already deleted
+            if (statusMessage && !statusMessageDeleted) {
+                statusMessageDeleted = true;
+                setTimeout(async () => {
+                    try {
+                        await statusMessage.delete();
+                    } catch (e) {
+                        // Only log if it's not an "Unknown Message" error
+                        if (!e.message?.includes('Unknown Message')) {
+                            console.error('Failed to delete status message in cleanup:', e);
+                        }
+                    }
+                }, 2000);
+            }
         }
         
         // If no response was sent, send a default message
