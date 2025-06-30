@@ -40,3 +40,6 @@ coverage/
 
 # Session data
 session-mappings.json
+
+# Temporary files
+:memory:

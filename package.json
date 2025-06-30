@@ -7,10 +7,10 @@
     "prepare": "husky",
     "start": "node discord-bot.js",
     "dev": "node --watch discord-bot.js",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "test:verbose": "jest --verbose --coverage",
+    "test": "NODE_ENV=test jest",
+    "test:watch": "NODE_ENV=test jest --watch",
+    "test:coverage": "NODE_ENV=test jest --coverage",
+    "test:verbose": "NODE_ENV=test jest --verbose --coverage",
     "test:unit": "jest tests/session-manager.test.js",
     "test:integration": "jest tests/session-integration.test.js"
   },
@@ -20,7 +20,8 @@
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "husky": "^9.1.7",
-    "jest": "^30.0.3"
+    "jest": "^30.0.3",
+    "jest-environment-node": "^30.0.2"
   },
   "directories": {
     "doc": "docs"

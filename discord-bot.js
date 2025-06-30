@@ -1858,22 +1858,52 @@ client.on(Events.Error, error => {
     console.error('Discord client error:', error);
 });
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-    console.log('\n🛑 Shutting down...');
-    client.destroy();
-    process.exit(0);
-});
+// Graceful shutdown (only in production)
+if (process.env.NODE_ENV !== 'test') {
+    process.on('SIGINT', () => {
+        console.log('\n🛑 Shutting down...');
+        client.destroy();
+        process.exit(0);
+    });
+}
 
 // Login
 const token = process.env.DISCORD_BOT_TOKEN;
 if (!token) {
     console.error('❌ DISCORD_BOT_TOKEN not found!');
     console.error('Please add DISCORD_BOT_TOKEN to your .env file');
-    process.exit(1);
+    if (process.env.NODE_ENV !== 'test') {
+        process.exit(1);
+    }
+} else if (process.env.NODE_ENV !== 'test') {
+    client.login(token).catch(error => {
+        console.error('❌ Failed to login:', error);
+        process.exit(1);
+    });
 }
 
-client.login(token).catch(error => {
-    console.error('❌ Failed to login:', error);
-    process.exit(1);
-});
+// Export functions for testing
+if (process.env.NODE_ENV === 'test') {
+    module.exports = {
+        __testExports: {
+            logError,
+            loadBaseContext,
+            loadChannelContext,
+            refreshAllContexts,
+            loadSessions,
+            saveSessions,
+            cleanupOldSessions,
+            mentionsJira,
+            getJiraContext,
+            safeQuery,
+            queryClaudeSDK,
+            splitMessage,
+            createTicketSuggestion,
+            createTicketPreviewEmbed,
+            createTicketActionButtons,
+            wasTicketAlreadyHandled,
+            recordTicketDecision,
+            handleReflectionCommand
+        }
+    };
+}
