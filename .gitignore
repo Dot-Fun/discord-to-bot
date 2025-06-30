@@ -36,6 +36,10 @@ logs/
 
 # Test coverage
 coverage/
+.nyc_output/
+
+# Session data
+session-mappings.json
 
 # Temporary files
 :memory:

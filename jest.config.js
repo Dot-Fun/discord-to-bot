@@ -3,9 +3,11 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
   coverageDirectory: 'coverage',
   collectCoverageFrom: [
+    'session-manager.js',
     'discord-bot.js',
     '!node_modules/**',
     '!coverage/**',
+    '!jest.config.js',
     '!tests/**'
   ],
   coverageThreshold: {
@@ -17,7 +19,8 @@ module.exports = {
     }
   },
   testMatch: [
-    '**/tests/**/*.test.js'
+    '**/tests/**/*.test.js',
+    '**/__tests__/**/*.test.js'
   ],
   verbose: true,
   testTimeout: 10000,

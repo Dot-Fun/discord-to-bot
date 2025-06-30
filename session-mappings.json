@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "savedAt": "2025-06-30T20:13:21.971Z",
+  "savedAt": "2025-06-30T20:32:14.078Z",
   "sessions": [
     [
       "1319782530249003100",
@@ -59,6 +59,16 @@
         "lastActivity": 1751314401971,
         "messageCount": 3,
         "channelName": "test",
+        "guildName": "DotFun"
+      }
+    ],
+    [
+      "1331495084629430282",
+      {
+        "sessionId": "08c97d8c-291b-45dc-a92f-8ff663c477dc",
+        "lastActivity": 1751315534078,
+        "messageCount": 22,
+        "channelName": "xurrent-look-good",
         "guildName": "DotFun"
       }
     ]
