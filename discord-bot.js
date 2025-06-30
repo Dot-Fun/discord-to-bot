@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes } = require('discord.js');
 const { query } = require('@anthropic-ai/claude-code');
 const dotenv = require('dotenv');
 const fs = require('fs');
@@ -54,6 +54,21 @@ const CONFIG = {
     CWD: process.cwd(), // Working directory for Claude to find .mcp.json
     QUERY_TIMEOUT: 300000 // 5 minute timeout for Claude queries (increased from 2)
 };
+
+// Slash commands array
+const commands = [
+    new SlashCommandBuilder()
+        .setName('reflection')
+        .setDescription('Analyze chat history and suggest improvements to bot instructions')
+        .addStringOption(option =>
+            option.setName('scope')
+                .setDescription('Scope of reflection')
+                .addChoices(
+                    { name: 'Global (CLAUDE.md)', value: 'global' },
+                    { name: 'Channel-specific', value: 'channel' }
+                )
+                .setRequired(false))
+];
 
 // Load allowed tools from settings.json
 let allowedToolsList = [];
@@ -822,12 +837,132 @@ function recordTicketDecision(channelId, ticket, decision) {
     }
 }
 
+// Handler for /reflection slash command
+async function handleReflectionCommand(interaction) {
+    await interaction.deferReply();
+    
+    try {
+        const scope = interaction.options.getString('scope') || 'global';
+        const channelId = interaction.channel.id;
+        const channelName = interaction.channel.name;
+        
+        console.log(`🔍 Running /reflection command in #${channelName} with scope: ${scope}`);
+        
+        // Fetch recent messages for context
+        const messages = await interaction.channel.messages.fetch({ limit: 100 });
+        const messageHistory = Array.from(messages.values())
+            .reverse()
+            .map(msg => ({
+                author: msg.author.username,
+                content: msg.content,
+                timestamp: msg.createdAt.toISOString(),
+                isBot: msg.author.bot
+            }))
+            .filter(msg => msg.content && !msg.content.startsWith('/'));
+        
+        // Read the reflection prompt
+        const reflectionPromptPath = path.join(CONFIG.CWD, '.claude', 'commands', 'reflection.md');
+        let reflectionPrompt = '';
+        try {
+            reflectionPrompt = fs.readFileSync(reflectionPromptPath, 'utf8');
+        } catch (error) {
+            await interaction.editReply('❌ Could not read reflection prompt file.');
+            return;
+        }
+        
+        // Read current instructions based on scope
+        let currentInstructions = '';
+        let instructionsPath = '';
+        
+        if (scope === 'global') {
+            instructionsPath = path.join(CONFIG.CWD, 'CLAUDE.md');
+            try {
+                currentInstructions = fs.readFileSync(instructionsPath, 'utf8');
+            } catch (error) {
+                await interaction.editReply('❌ Could not read CLAUDE.md file.');
+                return;
+            }
+        } else {
+            // Channel-specific
+            const channelContext = loadChannelContext(channelId);
+            if (channelContext && channelContext.instructions) {
+                currentInstructions = channelContext.instructions;
+            } else {
+                currentInstructions = 'No channel-specific instructions found.';
+            }
+        }
+        
+        // Build the reflection query
+        const reflectionQuery = `${reflectionPrompt}
+
+<chat_history>
+${messageHistory.map(m => `[${m.timestamp}] ${m.author}${m.isBot ? ' (bot)' : ''}: ${m.content}`).join('\n')}
+</chat_history>
+
+<claude_instructions>
+${currentInstructions}
+</claude_instructions>
+
+Please analyze the chat history and current instructions for ${scope === 'global' ? 'global CLAUDE.md' : `channel-specific context for #${channelName}`}.
+
+Important: 
+- Focus on practical improvements based on the actual conversation patterns
+- If suggesting channel-specific improvements, consider the channel's purpose: ${channelName}
+- Keep suggestions concise and actionable
+- Only suggest changes that would genuinely improve the bot's behavior`;
+
+        // Create a message-like object for queryClaudeSDK
+        const messageLike = {
+            channel: interaction.channel,
+            author: interaction.user,
+            guild: interaction.guild,
+            reply: async (content) => {
+                if (typeof content === 'string') {
+                    return await interaction.editReply(content);
+                } else {
+                    return await interaction.editReply(content);
+                }
+            }
+        };
+        
+        // Send status update
+        await interaction.editReply('🔍 Analyzing chat history and instructions...');
+        
+        // Query Claude with the reflection prompt
+        const response = await queryClaudeSDK(reflectionQuery, [], messageLike);
+        
+        // Send the analysis results
+        const embed = new EmbedBuilder()
+            .setColor(0x5865F2)
+            .setTitle(`🔍 Reflection Analysis - ${scope === 'global' ? 'Global' : 'Channel'} Scope`)
+            .setDescription(response.substring(0, 4000))
+            .addFields({
+                name: '📍 Scope',
+                value: scope === 'global' ? 'CLAUDE.md (affects all channels)' : `#${channelName} specific`,
+                inline: true
+            })
+            .setFooter({ text: 'Review suggestions and apply manually if appropriate' })
+            .setTimestamp();
+            
+        await interaction.editReply({ content: null, embeds: [embed] });
+        
+    } catch (error) {
+        console.error('Error in reflection command:', error);
+        logError('Reflection command failed', error, {
+            channelId: interaction.channel.id,
+            userId: interaction.user.id
+        });
+        
+        await interaction.editReply('❌ An error occurred while running the reflection analysis.');
+    }
+}
+
 // Initial load
 loadBaseContext();
 loadSessions();
 
 // Bot ready event
-client.once(Events.ClientReady, readyClient => {
+client.once(Events.ClientReady, async readyClient => {
     console.log(`✅ Claude Discord Bot is online!`);
     console.log(`🤖 Logged in as ${readyClient.user.tag}`);
     console.log(`📊 Connected to ${readyClient.guilds.cache.size} guilds`);
@@ -841,6 +976,29 @@ client.once(Events.ClientReady, readyClient => {
     if (channelSessions.size > 0) {
         console.log(`📦 ${channelSessions.size} saved sessions loaded`);
     }
+    
+    // Register slash commands
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+    
+    try {
+        console.log('Started refreshing application (/) commands.');
+        
+        // Get all guild IDs
+        const guildIds = readyClient.guilds.cache.map(guild => guild.id);
+        
+        // Register commands for each guild
+        for (const guildId of guildIds) {
+            await rest.put(
+                Routes.applicationGuildCommands(readyClient.user.id, guildId),
+                { body: commands.map(cmd => cmd.toJSON()) },
+            );
+        }
+        
+        console.log(`✅ Successfully registered slash commands in ${guildIds.length} guilds`);
+    } catch (error) {
+        console.error('Error registering slash commands:', error);
+    }
+    
     console.log(`\n🆕 Latest Improvements:`);
     console.log(`  • Persistent session management per channel`);
     console.log(`  • Auto-includes last 50 messages for context`);
@@ -849,6 +1007,7 @@ client.once(Events.ClientReady, readyClient => {
     console.log(`  • 5-minute timeout for complex operations`);
     console.log(`  • Channel-specific contexts for security`);
     console.log(`  • Enhanced error logging to discord-bot-errors.log`);
+    console.log(`  • /reflection command for instruction improvements`);
     
     // Clean up old sessions on startup
     cleanupOldSessions();
@@ -857,11 +1016,20 @@ client.once(Events.ClientReady, readyClient => {
     setInterval(cleanupOldSessions, 24 * 60 * 60 * 1000); // Every 24 hours
     
     // Set activity
-    client.user.setActivity('@Dot help | v2.0', { type: 'LISTENING' });
+    client.user.setActivity('@Dot help | /reflection | v2.1', { type: 'LISTENING' });
 });
 
-// Interaction handler for ticket buttons
+// Interaction handler for buttons and slash commands
 client.on(Events.InteractionCreate, async interaction => {
+    // Handle slash commands
+    if (interaction.isChatInputCommand()) {
+        if (interaction.commandName === 'reflection') {
+            await handleReflectionCommand(interaction);
+        }
+        return;
+    }
+    
+    // Handle buttons
     if (!interaction.isButton()) return;
     
     const [action, type, ticketId] = interaction.customId.split('_');
@@ -1037,12 +1205,15 @@ client.on(Events.MessageCreate, async message => {
                 { name: '🆔 Session Info', value: '`@Dot session info` - Show current session', inline: false },
                 { name: '🔄 Reset Session', value: '`@Dot reset session` - Start fresh conversation', inline: false },
                 { name: '📊 List Sessions', value: '`@Dot list sessions` - Show all sessions (admin)', inline: false },
+                { name: '🔍 Reflection', value: '`/reflection [scope]` - Analyze chat and suggest improvements\n• Global: Update CLAUDE.md\n• Channel: Update channel-specific instructions', inline: false },
                 { name: '🛠️ Available Tools', value: 'Discord, JIRA, Confluence, Gmail, Google Calendar, Google Drive', inline: false },
                 { name: '📝 Examples', value: 
                     '`@Dot check my gmail`\n' +
                     '`@Dot what JIRA tickets are assigned to me?`\n' +
                     '`@Dot search google drive for project docs`\n' +
-                    '`@Dot send a discord message to #general`', 
+                    '`@Dot send a discord message to #general`\n' +
+                    '`/reflection` - Improve global instructions\n' +
+                    '`/reflection scope:channel` - Improve channel context', 
                     inline: false 
                 }
             )

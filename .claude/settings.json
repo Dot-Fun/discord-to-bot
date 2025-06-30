@@ -58,7 +58,13 @@
       "mcp__google-calendar__create-event",
       "mcp__google-calendar__update-event",
       "mcp__google-calendar__get-freebusy",
-      "mcp__google-calendar__get-current-time"
+      "mcp__google-calendar__get-current-time",
+      "Edit(/Users/alvinycheung/dotfun/discord-to-bot/CLAUDE.md)",
+      "Write(/Users/alvinycheung/dotfun/discord-to-bot/CLAUDE.md)",
+      "MultiEdit(/Users/alvinycheung/dotfun/discord-to-bot/CLAUDE.md)",
+      "Edit(/Users/alvinycheung/dotfun/discord-to-bot/channel-contexts/*.json)",
+      "Write(/Users/alvinycheung/dotfun/discord-to-bot/channel-contexts/*.json)",
+      "MultiEdit(/Users/alvinycheung/dotfun/discord-to-bot/channel-contexts/*.json)"
     ]
   },
   "enabledMcpjsonServers": [
