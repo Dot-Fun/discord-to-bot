@@ -1,11 +1,40 @@
-const { Client, GatewayIntentBits, Events, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { query } = require('@anthropic-ai/claude-code');
 const dotenv = require('dotenv');
 const fs = require('fs');
 const path = require('path');
+const { appendFileSync } = require('fs');
 
 // Load environment variables
 dotenv.config();
+
+// Error logging
+const ERROR_LOG_PATH = path.join(__dirname, 'discord-bot-errors.log');
+
+function logError(context, error, details = {}) {
+    const timestamp = new Date().toISOString();
+    const errorEntry = {
+        timestamp,
+        context,
+        error: {
+            message: error.message,
+            stack: error.stack,
+            type: error.constructor.name
+        },
+        details
+    };
+    
+    // Console log
+    console.error(`[${timestamp}] ${context}:`, error);
+    console.error('Details:', JSON.stringify(details, null, 2));
+    
+    // File log
+    try {
+        appendFileSync(ERROR_LOG_PATH, JSON.stringify(errorEntry) + '\n');
+    } catch (writeError) {
+        console.error('Failed to write to error log:', writeError);
+    }
+}
 
 // Create Discord client
 const client = new Client({
@@ -21,8 +50,9 @@ const client = new Client({
 const CONFIG = {
     MAX_RESPONSE_LENGTH: 2000,
     MAX_CONTEXT_MESSAGES: 10,
-    MAX_TURNS: 3, // Increased to allow tool use
-    CWD: process.cwd() // Working directory for Claude to find .mcp.json
+    MAX_TURNS: 5, // Increased to allow more tool use
+    CWD: process.cwd(), // Working directory for Claude to find .mcp.json
+    QUERY_TIMEOUT: 300000 // 5 minute timeout for Claude queries (increased from 2)
 };
 
 // Load allowed tools from settings.json
@@ -40,11 +70,249 @@ try {
     console.error('⚠️  Could not load .claude/settings.json:', error);
 }
 
+// Channel-specific context management
+const channelContexts = new Map();
+const baseContext = {};
+let contextsLastLoaded = null;
+const CONTEXT_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+function loadBaseContext() {
+    try {
+        const basePath = path.join(CONFIG.CWD, 'channel-contexts', 'base-context.json');
+        if (fs.existsSync(basePath)) {
+            Object.assign(baseContext, JSON.parse(fs.readFileSync(basePath, 'utf8')));
+            console.log(`📋 Loaded base context v${baseContext.version}`);
+            return true;
+        }
+    } catch (error) {
+        console.error('⚠️  Could not load base-context.json:', error);
+    }
+    return false;
+}
+
+function loadChannelContext(channelId) {
+    try {
+        // Check cache first
+        if (channelContexts.has(channelId)) {
+            const cached = channelContexts.get(channelId);
+            if (Date.now() - cached.loadedAt < CONTEXT_CACHE_DURATION) {
+                return cached.context;
+            }
+        }
+
+        // Try to load specific channel context
+        const contextDir = path.join(CONFIG.CWD, 'channel-contexts');
+        const files = fs.readdirSync(contextDir);
+        
+        for (const file of files) {
+            if (file.endsWith('.json') && file !== 'base-context.json' && file !== 'project-template.json') {
+                const contextPath = path.join(contextDir, file);
+                const context = JSON.parse(fs.readFileSync(contextPath, 'utf8'));
+                
+                if (context.channelId === channelId) {
+                    // Merge with base context if it inherits
+                    const fullContext = context.inherits ? 
+                        { ...baseContext, ...context } : 
+                        context;
+                    
+                    // Cache it
+                    channelContexts.set(channelId, {
+                        context: fullContext,
+                        loadedAt: Date.now()
+                    });
+                    
+                    console.log(`🔐 Loaded context for channel ${context.channelName} (${channelId})`);
+                    return fullContext;
+                }
+            }
+        }
+        
+        // Return base context if no specific context found
+        console.log(`📋 Using base context for channel ${channelId}`);
+        return baseContext;
+        
+    } catch (error) {
+        console.error(`⚠️  Error loading context for channel ${channelId}:`, error);
+        return baseContext;
+    }
+}
+
+function refreshAllContexts() {
+    channelContexts.clear();
+    loadBaseContext();
+    contextsLastLoaded = Date.now();
+    console.log('🔄 All contexts refreshed');
+}
+
 // Track conversations
 const conversations = new Map();
 
+// Store ticket suggestions and their status
+const ticketSuggestions = new Map(); // channelId -> { suggestions: [], history: [] }
+
+// Store pending ticket approvals
+const pendingTickets = new Map(); // messageId -> ticketData
+
+// Session management for Claude conversations
+const channelSessions = new Map(); // channelId -> { sessionId, lastActivity, messageCount }
+const SESSION_FILE = path.join(__dirname, 'session-mappings.json');
+
+// Load saved sessions on startup
+function loadSessions() {
+    try {
+        if (fs.existsSync(SESSION_FILE)) {
+            const data = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+            // Convert array back to Map
+            if (data.sessions && Array.isArray(data.sessions)) {
+                data.sessions.forEach(([channelId, sessionData]) => {
+                    channelSessions.set(channelId, sessionData);
+                });
+                console.log(`💾 Loaded ${channelSessions.size} saved sessions`);
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load sessions:', error);
+    }
+}
+
+// Save sessions to file
+function saveSessions() {
+    try {
+        const data = {
+            version: '1.0',
+            savedAt: new Date().toISOString(),
+            sessions: Array.from(channelSessions.entries())
+        };
+        fs.writeFileSync(SESSION_FILE, JSON.stringify(data, null, 2));
+    } catch (error) {
+        console.error('Failed to save sessions:', error);
+    }
+}
+
+// Clean up old sessions (older than 7 days)
+function cleanupOldSessions() {
+    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    let cleaned = 0;
+    
+    for (const [channelId, sessionData] of channelSessions.entries()) {
+        if (sessionData.lastActivity < sevenDaysAgo) {
+            channelSessions.delete(channelId);
+            cleaned++;
+        }
+    }
+    
+    if (cleaned > 0) {
+        console.log(`🧹 Cleaned up ${cleaned} old sessions`);
+        saveSessions();
+    }
+}
+
+// JIRA context cache
+let jiraContext = null;
+let jiraContextLoaded = null;
+
+// Check if message mentions JIRA/tickets
+function mentionsJira(message) {
+    const jiraKeywords = ['ticket', 'jira', 'story', 'task', 'bug', 'epic', 'create ticket', 'open ticket', 'issue'];
+    const lowerMessage = message.toLowerCase();
+    return jiraKeywords.some(keyword => lowerMessage.includes(keyword));
+}
+
+// Load or get cached JIRA context
+async function getJiraContext() {
+    // Check if we have cached context less than 1 hour old
+    if (jiraContext && jiraContextLoaded && (Date.now() - jiraContextLoaded) < 3600000) {
+        return jiraContext;
+    }
+    
+    try {
+        // Try to load from file first
+        const jiraContextPath = path.join(CONFIG.CWD, 'jira-context.json');
+        if (fs.existsSync(jiraContextPath)) {
+            jiraContext = JSON.parse(fs.readFileSync(jiraContextPath, 'utf8'));
+            jiraContextLoaded = Date.now();
+            console.log('📋 Loaded JIRA context from file');
+            return jiraContext;
+        }
+    } catch (error) {
+        console.error('Could not load jira-context.json:', error);
+    }
+    
+    // Return empty context if file doesn't exist
+    return {
+        instance: 'https://dotfun.atlassian.net',
+        projects: {},
+        issueTypes: {},
+        userMappings: {}
+    };
+}
+
+// Helper: Safe query wrapper that handles JSON parsing errors
+async function* safeQuery(options) {
+    const messageBuffer = [];
+    let totalMessages = 0;
+    let hasContent = false;
+    
+    try {
+        for await (const msg of query(options)) {
+            totalMessages++;
+            
+            // Track important messages
+            if (msg.type === 'assistant' || msg.type === 'tool_result') {
+                messageBuffer.push({
+                    type: msg.type,
+                    timestamp: new Date().toISOString(),
+                    hasContent: !!(msg.message?.content || msg.output)
+                });
+                
+                if (msg.message?.content || msg.output) {
+                    hasContent = true;
+                }
+            }
+            
+            // Successfully parsed message
+            yield msg;
+        }
+    } catch (error) {
+        if (error.message && error.message.includes('Unexpected end of JSON input')) {
+            logError('JSON parsing failed in Claude SDK', error, {
+                totalMessages,
+                messageBuffer: messageBuffer.slice(-5),
+                hasContent
+            });
+            
+            // If we had some content, try to recover gracefully
+            if (hasContent) {
+                console.log(`Recovering partial response (processed ${totalMessages} messages)...`);
+                // Yield a special error message to indicate partial success
+                yield {
+                    type: 'error',
+                    error: 'Response was interrupted but partial results are available.',
+                    recovered: true,
+                    messagesProcessed: totalMessages
+                };
+            } else {
+                // No content received, this is a real error
+                throw error;
+            }
+        } else {
+            // Re-throw non-JSON errors
+            throw error;
+        }
+    }
+}
+
 // Helper: Query Claude using the SDK with streaming
 async function queryClaudeSDK(prompt, context = [], originalMessage) {
+    const queryContext = {
+        channelId: originalMessage.channel.id,
+        channelName: originalMessage.channel.name,
+        userId: originalMessage.author.id,
+        username: originalMessage.author.username,
+        serverId: originalMessage.guild?.id,
+        serverName: originalMessage.guild?.name
+    };
+    
     try {
         // Build the full prompt with context
         let fullPrompt = prompt;
@@ -54,8 +322,13 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
                         '\n\nCurrent message: ' + prompt;
         }
         
-        console.log('Querying Claude with prompt:', fullPrompt);
+        console.log(`Querying Claude with prompt (${fullPrompt.length} chars)`);
         console.log('Working directory for Claude:', CONFIG.CWD);
+        
+        // Warn if prompt is very large
+        if (fullPrompt.length > 50000) {
+            console.warn(`⚠️ Very large prompt: ${fullPrompt.length} characters. This may cause streaming issues.`);
+        }
         
         // Enable debug mode to see errors
         process.env.DEBUG = 'true';
@@ -64,75 +337,277 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
         let responseMessage = null;
         let currentContent = '';
         let isProcessing = true;
+        let toolsUsed = [];
+        let errorOccurred = false;
         
         // Send typing indicator periodically while processing
         const typingInterval = setInterval(() => {
             if (isProcessing) {
-                originalMessage.channel.sendTyping();
+                originalMessage.channel.sendTyping().catch(err => {
+                    console.error('Failed to send typing indicator:', err);
+                });
             }
         }, 5000);
         
         try {
+            // Set up timeout
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Query timeout after 5 minutes')), CONFIG.QUERY_TIMEOUT);
+            });
+            
             // Query Claude using the SDK with MCP support
-            // Using 'default' permission mode should respect .claude/settings.json
-            for await (const msg of query({
-                prompt: fullPrompt,
-                options: {
-                    maxTurns: CONFIG.MAX_TURNS,
-                    // Enable MCP by setting the working directory
-                    cwd: CONFIG.CWD,
-                    // Use default permission mode to respect .claude/settings.json
-                    permissionMode: 'default',
-                    // Uncomment this line if settings.json isn't being respected:
-                    // allowedTools: allowedToolsList
-                }
-            })) {
-                console.log('Streaming message type:', msg.type);
+            console.log('Starting Claude query with MCP tools...');
+            
+            // Get or create session for this channel
+            const channelId = originalMessage.channel.id;
+            const existingSession = channelSessions.get(channelId);
+            let sessionOptions = {
+                maxTurns: CONFIG.MAX_TURNS,
+                cwd: CONFIG.CWD,
+                permissionMode: 'default',
+            };
+            
+            if (existingSession && existingSession.sessionId) {
+                console.log(`🔄 Resuming session ${existingSession.sessionId} for channel ${channelId}`);
+                sessionOptions.resume = existingSession.sessionId;
+            } else {
+                console.log(`🆕 Creating new session for channel ${channelId}`);
+            }
+            
+            const queryPromise = (async () => {
+                let messageCount = 0;
+                let lastMessageTime = Date.now();
+                let capturedSessionId = null;
                 
-                // Handle different message types from Claude SDK
-                if (msg.type === 'assistant' && msg.message) {
-                    const content = msg.message.content;
-                    if (Array.isArray(content)) {
-                        for (const item of content) {
-                            if (item.type === 'text' && item.text) {
-                                // Add text to current content
-                                currentContent += item.text + '\n';
+                try {
+                    for await (const msg of safeQuery({
+                        prompt: fullPrompt,
+                        options: sessionOptions
+                    })) {
+                        messageCount++;
+                        const timeSinceLastMessage = Date.now() - lastMessageTime;
+                        lastMessageTime = Date.now();
+                        
+                        console.log(`Streaming message #${messageCount} type: ${msg.type} (${timeSinceLastMessage}ms since last)`);
+                        
+                        // Add raw message logging for debugging
+                        if (process.env.DEBUG === 'true') {
+                            console.log('Raw message:', JSON.stringify(msg).substring(0, 500));
+                        }
+                        
+                        // Extract session ID from messages
+                        if ('session_id' in msg && msg.session_id) {
+                            if (!capturedSessionId) {
+                                capturedSessionId = msg.session_id;
+                                console.log(`🆔 Captured session ID: ${capturedSessionId}`);
+                            }
+                        }
+                        
+                        // Handle different message types from Claude SDK
+                        if (msg.type === 'assistant' && msg.message) {
+                            const content = msg.message.content;
+                            if (Array.isArray(content)) {
+                                for (const item of content) {
+                                    if (item.type === 'text' && item.text) {
+                                        // Add text to current content
+                                        currentContent += item.text + '\n';
+                                        
+                                        try {
+                                            // Send or update Discord message
+                                            if (!responseMessage) {
+                                                // Send initial message
+                                                responseMessage = await originalMessage.reply(item.text);
+                                            } else if (currentContent.length < CONFIG.MAX_RESPONSE_LENGTH) {
+                                                // Edit existing message if under limit
+                                                await responseMessage.edit(currentContent.trim());
+                                            } else {
+                                                // Send follow-up message if too long
+                                                await originalMessage.channel.send(item.text);
+                                            }
+                                        } catch (discordError) {
+                                            logError('Discord message send/edit failed', discordError, {
+                                                ...queryContext,
+                                                contentLength: currentContent.length,
+                                                hasResponseMessage: !!responseMessage
+                                            });
+                                            errorOccurred = true;
+                                        }
+                                    } else if (item.type === 'tool_use') {
+                                        // Track tool usage
+                                        toolsUsed.push({
+                                            name: item.name,
+                                            id: item.id,
+                                            timestamp: new Date().toISOString()
+                                        });
+                                        
+                                        // Notify about tool usage
+                                        const toolMessage = `🔧 Using tool: ${item.name}...`;
+                                        try {
+                                            if (!responseMessage) {
+                                                responseMessage = await originalMessage.reply(toolMessage);
+                                            } else {
+                                                await originalMessage.channel.send(toolMessage);
+                                            }
+                                        } catch (discordError) {
+                                            logError('Failed to send tool notification', discordError, {
+                                                ...queryContext,
+                                                tool: item.name
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (msg.type === 'tool_result') {
+                            // Log tool results with more detail
+                            const toolResult = {
+                                tool_use_id: msg.tool_use_id,
+                                success: !msg.is_error,
+                                outputLength: msg.output?.length || 0,
+                                error: msg.is_error ? msg.output : null
+                            };
+                            
+                            console.log('Tool result:', toolResult);
+                            
+                            // Log large tool outputs that might cause issues
+                            if (msg.output && msg.output.length > 10000) {
+                                console.warn(`⚠️ Large tool output: ${msg.output.length} characters from tool ${msg.tool_use_id}`);
+                            }
+                            
+                            if (msg.is_error) {
+                                logError('Tool execution failed', new Error(msg.output || 'Unknown tool error'), {
+                                    ...queryContext,
+                                    tool_use_id: msg.tool_use_id,
+                                    toolsUsed
+                                });
+                                errorOccurred = true;
                                 
-                                // Send or update Discord message
-                                if (!responseMessage) {
-                                    // Send initial message
-                                    responseMessage = await originalMessage.reply(item.text);
-                                } else if (currentContent.length < CONFIG.MAX_RESPONSE_LENGTH) {
-                                    // Edit existing message if under limit
-                                    await responseMessage.edit(currentContent.trim());
-                                } else {
-                                    // Send follow-up message if too long
-                                    await originalMessage.channel.send(item.text);
+                                // Check if it's a Discord-specific error that might be recoverable
+                                const errorMessage = msg.output || '';
+                                const isDiscordError = errorMessage.includes('Discord') || errorMessage.includes('rate limit');
+                                
+                                // Notify user of tool failure with more context
+                                try {
+                                    let userMessage = `❌ Tool error: ${errorMessage.substring(0, 200) || 'Unknown error'}`;
+                                    
+                                    // Add helpful context for common errors
+                                    if (errorMessage.includes('rate limit')) {
+                                        userMessage += '\n⏳ Discord rate limit hit. Waiting a moment...';
+                                    } else if (errorMessage.includes('permission')) {
+                                        userMessage += '\n🔒 Check bot permissions in server settings.';
+                                    } else if (errorMessage.includes('not found')) {
+                                        userMessage += '\n❓ The requested resource was not found.';
+                                    }
+                                    
+                                    await originalMessage.channel.send(userMessage);
+                                } catch (discordError) {
+                                    console.error('Failed to send tool error notification:', discordError);
                                 }
-                            } else if (item.type === 'tool_use') {
-                                // Notify about tool usage
-                                const toolMessage = `🔧 Using tool: ${item.name}...`;
-                                if (!responseMessage) {
-                                    responseMessage = await originalMessage.reply(toolMessage);
-                                } else {
-                                    await originalMessage.channel.send(toolMessage);
+                            } else {
+                                // Send success notification for important tools
+                                if (msg.output && msg.output.length > 0) {
+                                    try {
+                                        const resultMsg = `✅ Tool completed successfully`;
+                                        await originalMessage.channel.send(resultMsg);
+                                    } catch (discordError) {
+                                        console.error('Failed to send tool success notification:', discordError);
+                                    }
                                 }
+                            }
+                        } else if (msg.type === 'error') {
+                            // Handle error messages
+                            const isRecovered = msg.recovered === true;
+                            
+                            if (!isRecovered) {
+                                logError('Claude streaming error', new Error(msg.error || JSON.stringify(msg)), {
+                                    ...queryContext,
+                                    messageType: msg.type,
+                                    toolsUsed
+                                });
+                            }
+                            errorOccurred = true;
+                            
+                            let errorMsg;
+                            if (isRecovered) {
+                                errorMsg = `⚠️ Response interrupted after processing ${msg.messagesProcessed || 0} messages. Showing partial results...`;
+                                console.log('Recovered from JSON parsing error, continuing with partial response');
+                            } else {
+                                errorMsg = `❌ Error: ${msg.error || JSON.stringify(msg) || 'Unknown error'}`;
+                            }
+                            
+                            try {
+                                await originalMessage.channel.send(errorMsg);
+                            } catch (discordError) {
+                                console.error('Failed to send error notification:', discordError);
+                            }
+                        } else if (msg.type === 'human') {
+                            // Handle permission prompts
+                            console.log('Permission prompt:', msg);
+                            try {
+                                await originalMessage.channel.send(`⚠️ Permission required: ${msg.message?.content || 'Check console'}`);
+                            } catch (discordError) {
+                                console.error('Failed to send permission prompt:', discordError);
                             }
                         }
                     }
-                } else if (msg.type === 'tool_result') {
-                    // Log tool results
-                    console.log('Tool completed:', msg);
+                    // Log when streaming actually completes
+                    console.log(`✅ Streaming completed - ${messageCount} messages processed`);
                     
-                    // Send a status update
-                    if (msg.tool_use_id) {
-                        await originalMessage.channel.send('✅ Tool completed');
+                    // Save session information
+                    if (capturedSessionId) {
+                        const sessionData = {
+                            sessionId: capturedSessionId,
+                            lastActivity: Date.now(),
+                            messageCount: messageCount,
+                            channelName: originalMessage.channel.name,
+                            guildName: originalMessage.guild?.name || 'DM'
+                        };
+                        channelSessions.set(channelId, sessionData);
+                        saveSessions();
+                        console.log(`💾 Saved session ${capturedSessionId} for channel ${channelId}`);
                     }
-                } else if (msg.type === 'error') {
-                    // Handle error messages
-                    const errorMsg = `❌ Error: ${msg.error || 'Unknown error'}`;
-                    await originalMessage.channel.send(errorMsg);
+                } catch (streamError) {
+                    logError('Claude streaming failed', streamError, {
+                        ...queryContext,
+                        toolsUsed,
+                        currentContentLength: currentContent.length
+                    });
+                    throw streamError;
                 }
+            })();
+            
+            // Race between query and timeout
+            await Promise.race([queryPromise, timeoutPromise]);
+            
+            // Log successful completion if no errors
+            if (!errorOccurred && toolsUsed.length > 0) {
+                console.log(`✅ Query completed successfully. Tools used: ${toolsUsed.map(t => t.name).join(', ')}`);
+            } else if (errorOccurred && currentContent.length > 0) {
+                console.log(`⚠️ Query completed with errors but got partial response (${currentContent.length} chars)`);
+            }
+            
+        } catch (timeoutError) {
+            // Handle timeout specifically
+            if (timeoutError.message.includes('timeout')) {
+                logError('Query timeout', timeoutError, {
+                    ...queryContext,
+                    toolsUsed,
+                    currentContentLength: currentContent.length,
+                    hadPartialResponse: currentContent.length > 0
+                });
+                
+                // If we have partial content, use it
+                if (currentContent.length > 0) {
+                    console.log('Using partial response due to timeout...');
+                    try {
+                        await originalMessage.channel.send('⏱️ Response took too long, showing partial results...');
+                    } catch (e) {
+                        console.error('Failed to send timeout notification:', e);
+                    }
+                } else {
+                    throw timeoutError;
+                }
+            } else {
+                throw timeoutError;
             }
         } finally {
             // Stop typing indicator
@@ -142,13 +617,21 @@ async function queryClaudeSDK(prompt, context = [], originalMessage) {
         
         // If no response was sent, send a default message
         if (!responseMessage && !currentContent) {
-            return "I'm processing your request...";
+            logError('No response generated', new Error('Empty response from Claude'), {
+                ...queryContext,
+                toolsUsed
+            });
+            return "I encountered an issue processing your request. Please check the logs.";
         }
         
         return currentContent.trim();
         
     } catch (error) {
-        console.error('Error querying Claude:', error);
+        logError('queryClaudeSDK failed', error, {
+            ...queryContext,
+            promptLength: prompt.length,
+            contextLength: context.length
+        });
         throw error;
     }
 }
@@ -177,6 +660,119 @@ function splitMessage(text, maxLength = CONFIG.MAX_RESPONSE_LENGTH) {
     return messages;
 }
 
+// Helper: Create ticket suggestion from context
+function createTicketSuggestion(messageContent, channelName, userContext) {
+    // Analyze the message to determine what kind of ticket is needed
+    const suggestion = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        originalMessage: messageContent,
+        channel: channelName,
+        suggestedTickets: []
+    };
+    
+    // This will be populated by Claude's analysis
+    return suggestion;
+}
+
+// Helper: Create ticket preview embed
+function createTicketPreviewEmbed(ticket) {
+    const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`🎫 Ticket Preview: ${ticket.issueType}`);
+    
+    // Add project info
+    embed.addFields(
+        { name: '📋 Project', value: `${ticket.projectName} (${ticket.projectKey})`, inline: true },
+        { name: '🏷️ Type', value: ticket.issueType, inline: true },
+        { name: '⚡ Priority', value: ticket.priority || 'Medium', inline: true }
+    );
+    
+    // Add ticket details
+    embed.addFields(
+        { name: '📝 Summary', value: ticket.summary || '[No summary provided]' },
+        { name: '📄 Description', value: (ticket.description || '[No description]').substring(0, 1024) }
+    );
+    
+    // Add assignee if specified
+    if (ticket.assignee) {
+        embed.addFields({ name: '👤 Assignee', value: ticket.assignee.displayName || ticket.assignee.email });
+    }
+    
+    // Add labels if any
+    if (ticket.labels && ticket.labels.length > 0) {
+        embed.addFields({ name: '🏷️ Labels', value: ticket.labels.join(', ') });
+    }
+    
+    embed.setFooter({ text: 'Click buttons below to create or skip this ticket' });
+    
+    return embed;
+}
+
+// Helper: Create action buttons for ticket approval
+function createTicketActionButtons(ticketId) {
+    const row = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`create_ticket_${ticketId}`)
+                .setLabel('Create Ticket')
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('✅'),
+            new ButtonBuilder()
+                .setCustomId(`skip_ticket_${ticketId}`)
+                .setLabel('Skip')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('⏭️'),
+            new ButtonBuilder()
+                .setCustomId(`edit_ticket_${ticketId}`)
+                .setLabel('Edit Details')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('✏️')
+        );
+    
+    return row;
+}
+
+// Helper: Check if similar ticket was already suggested/created
+function wasTicketAlreadyHandled(channelId, ticketSummary) {
+    const channelHistory = ticketSuggestions.get(channelId);
+    if (!channelHistory) return false;
+    
+    // Check if a similar ticket was created or skipped in the last 24 hours
+    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+    
+    return channelHistory.history.some(entry => {
+        return entry.timestamp > oneDayAgo && 
+               entry.summary.toLowerCase().includes(ticketSummary.toLowerCase().substring(0, 50));
+    });
+}
+
+// Helper: Record ticket decision
+function recordTicketDecision(channelId, ticket, decision) {
+    let channelData = ticketSuggestions.get(channelId);
+    if (!channelData) {
+        channelData = { suggestions: [], history: [] };
+        ticketSuggestions.set(channelId, channelData);
+    }
+    
+    channelData.history.push({
+        timestamp: Date.now(),
+        summary: ticket.summary,
+        projectKey: ticket.projectKey,
+        decision: decision, // 'created', 'skipped', 'edited'
+        ticketKey: ticket.ticketKey || null
+    });
+    
+    // Keep only last 100 history entries per channel
+    if (channelData.history.length > 100) {
+        channelData.history = channelData.history.slice(-100);
+    }
+}
+
+// Initial load
+loadBaseContext();
+loadSessions();
+
 // Bot ready event
 client.once(Events.ClientReady, readyClient => {
     console.log(`✅ Claude Discord Bot is online!`);
@@ -189,9 +785,172 @@ client.once(Events.ClientReady, readyClient => {
     if (allowedToolsList.length > 0) {
         console.log(`✅ ${allowedToolsList.length} tools allowed from settings.json`);
     }
+    if (channelSessions.size > 0) {
+        console.log(`📦 ${channelSessions.size} saved sessions loaded`);
+    }
+    console.log(`\n🆕 Latest Improvements:`);
+    console.log(`  • Persistent session management per channel`);
+    console.log(`  • Auto-includes last 50 messages for context`);
+    console.log(`  • Detects JIRA mentions and preloads context`);
+    console.log(`  • JSON error recovery with partial responses`);
+    console.log(`  • 5-minute timeout for complex operations`);
+    console.log(`  • Channel-specific contexts for security`);
+    console.log(`  • Enhanced error logging to discord-bot-errors.log`);
+    
+    // Clean up old sessions on startup
+    cleanupOldSessions();
+    
+    // Schedule periodic session cleanup
+    setInterval(cleanupOldSessions, 24 * 60 * 60 * 1000); // Every 24 hours
     
     // Set activity
-    client.user.setActivity('@Dot help | Tools enabled', { type: 'LISTENING' });
+    client.user.setActivity('@Dot help | v2.0', { type: 'LISTENING' });
+});
+
+// Interaction handler for ticket buttons
+client.on(Events.InteractionCreate, async interaction => {
+    if (!interaction.isButton()) return;
+    
+    const [action, type, ticketId] = interaction.customId.split('_');
+    
+    if (action === 'create' && type === 'ticket') {
+        await interaction.deferReply({ ephemeral: true });
+        
+        let ticketData = null;
+        try {
+            ticketData = pendingTickets.get(interaction.message.id);
+            if (!ticketData) {
+                await interaction.editReply({ content: '❌ Ticket data not found. Please try creating a new suggestion.' });
+                return;
+            }
+            
+            // Validate required fields
+            if (!ticketData.projectKey || !ticketData.issueType || !ticketData.summary) {
+                await interaction.editReply({ 
+                    content: '❌ Missing required ticket fields. Please ensure the ticket has a project, type, and summary.' 
+                });
+                return;
+            }
+            
+            // Load JIRA context if needed
+            if (!jiraContext && fs.existsSync(path.join(__dirname, 'jira-context.json'))) {
+                try {
+                    jiraContext = JSON.parse(fs.readFileSync(path.join(__dirname, 'jira-context.json'), 'utf8'));
+                } catch (e) {
+                    console.error('Failed to load JIRA context:', e);
+                }
+            }
+            
+            // Create the actual JIRA ticket using Claude with MCP tools
+            const createTicketPrompt = `Create a JIRA ticket using the mcp__atlassian__createJiraIssue tool with these exact parameters:
+
+Project Key: ${ticketData.projectKey}
+Issue Type: ${ticketData.issueType}
+Summary: ${ticketData.summary}
+Description: ${ticketData.description}
+${ticketData.priority ? `Priority: ${ticketData.priority}` : ''}
+${ticketData.assignee ? `Assignee Account ID: ${ticketData.assignee.jiraAccountId}` : ''}
+${ticketData.labels && ticketData.labels.length > 0 ? `Labels: ${ticketData.labels.join(', ')}` : ''}
+
+IMPORTANT: 
+1. Use the mcp__atlassian__createJiraIssue tool
+2. The cloudId is: 840697aa-7447-4ad1-bd0e-3f528d107624
+3. After creating, open the ticket in the browser using the 'open' command
+4. Return the ticket key (format: PROJECT-NUMBER)`;
+            
+            // Create a message-like object for queryClaudeSDK
+            const messageLike = {
+                channel: interaction.channel,
+                author: interaction.user,
+                guild: interaction.guild,
+                reply: async (content) => {
+                    // For interactions, we update the reply instead
+                    if (typeof content === 'string') {
+                        return await interaction.editReply({ content });
+                    } else {
+                        return await interaction.editReply(content);
+                    }
+                }
+            };
+            
+            const response = await queryClaudeSDK(createTicketPrompt, [], messageLike);
+            
+            // Record the decision
+            recordTicketDecision(interaction.channel.id, ticketData, 'created');
+            
+            // Update the original message to show it was created
+            const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                .setColor(0x00FF00)
+                .setTitle(`✅ Ticket Created: ${ticketData.issueType}`);
+            
+            await interaction.message.edit({ 
+                embeds: [updatedEmbed], 
+                components: [] // Remove buttons
+            });
+            
+            // Extract ticket key from response if possible
+            const ticketKeyMatch = response.match(/([A-Z]+-\d+)/g);
+            const ticketKey = ticketKeyMatch ? ticketKeyMatch[ticketKeyMatch.length - 1] : null;
+            
+            if (ticketKey) {
+                ticketData.ticketKey = ticketKey;
+                await interaction.editReply({ 
+                    content: `✅ Ticket created successfully!\n\n🎫 **${ticketKey}**\n🔗 https://dotfun.atlassian.net/browse/${ticketKey}` 
+                });
+            } else {
+                await interaction.editReply({ content: `✅ Ticket created successfully!\n${response.substring(0, 1900)}` });
+            }
+            
+        } catch (error) {
+            console.error('Error creating ticket:', error);
+            logError('Ticket creation failed', error, {
+                channelId: interaction.channel.id,
+                userId: interaction.user.id,
+                ticketData: ticketData
+            });
+            
+            // Provide more helpful error messages
+            let errorMessage = '❌ Error creating ticket: ';
+            if (error.message.includes('timeout')) {
+                errorMessage += 'Request timed out. Please try again.';
+            } else if (error.message.includes('permission')) {
+                errorMessage += 'Permission denied. Check JIRA permissions.';
+            } else if (error.message.includes('not found')) {
+                errorMessage += 'Project or issue type not found.';
+            } else {
+                errorMessage += error.message.substring(0, 200);
+            }
+            
+            await interaction.editReply({ content: errorMessage });
+        }
+        
+    } else if (action === 'skip' && type === 'ticket') {
+        await interaction.deferReply({ ephemeral: true });
+        
+        const ticketData = pendingTickets.get(interaction.message.id);
+        if (ticketData) {
+            recordTicketDecision(interaction.channel.id, ticketData, 'skipped');
+        }
+        
+        // Update the original message
+        const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+            .setColor(0x808080)
+            .setTitle(`⏭️ Ticket Skipped: ${ticketData?.issueType || 'Unknown'}`);
+        
+        await interaction.message.edit({ 
+            embeds: [updatedEmbed], 
+            components: [] // Remove buttons
+        });
+        
+        await interaction.editReply({ content: '⏭️ Ticket creation skipped. I\'ll remember not to suggest this again.' });
+        
+    } else if (action === 'edit' && type === 'ticket') {
+        // For now, just provide instructions
+        await interaction.reply({ 
+            content: '📝 To edit ticket details, please describe what changes you\'d like to make and I\'ll create a new suggestion with your modifications.',
+            ephemeral: true 
+        });
+    }
 });
 
 // Message handler
@@ -217,6 +976,14 @@ client.on(Events.MessageCreate, async message => {
             .addFields(
                 { name: '💬 Usage', value: '`@Dot <question>` - Just mention me!', inline: false },
                 { name: '🧹 Clear', value: '`@Dot clear` - Reset conversation', inline: false },
+                { name: '📊 Debug', value: '`@Dot debug` - Show recent errors', inline: false },
+                { name: '📈 Status', value: '`@Dot status` - Show bot configuration', inline: false },
+                { name: '🔄 Refresh Context', value: '`@Dot refresh-context` - Reload preloaded data', inline: false },
+                { name: '🧠 Show Context', value: '`@Dot show-context` - Display loaded context', inline: false },
+                { name: '🎯 Show JIRA', value: '`@Dot show-jira` - Display JIRA context', inline: false },
+                { name: '🆔 Session Info', value: '`@Dot session info` - Show current session', inline: false },
+                { name: '🔄 Reset Session', value: '`@Dot reset session` - Start fresh conversation', inline: false },
+                { name: '📊 List Sessions', value: '`@Dot list sessions` - Show all sessions (admin)', inline: false },
                 { name: '🛠️ Available Tools', value: 'Discord, JIRA, Confluence, Gmail, Google Calendar, Google Drive', inline: false },
                 { name: '📝 Examples', value: 
                     '`@Dot check my gmail`\n' +
@@ -238,6 +1005,256 @@ client.on(Events.MessageCreate, async message => {
         return;
     }
     
+    // Session management commands
+    if (userQuery.toLowerCase() === 'session info' || userQuery.toLowerCase() === 'session') {
+        const sessionData = channelSessions.get(message.channel.id);
+        
+        const sessionEmbed = new EmbedBuilder()
+            .setColor(0x00D9FF)
+            .setTitle('🆔 Session Information')
+            .setTimestamp();
+        
+        if (sessionData) {
+            const lastActivityDate = new Date(sessionData.lastActivity);
+            sessionEmbed.addFields(
+                { name: 'Session ID', value: `\`${sessionData.sessionId}\``, inline: false },
+                { name: 'Channel', value: sessionData.channelName || 'Unknown', inline: true },
+                { name: 'Server', value: sessionData.guildName || 'DM', inline: true },
+                { name: 'Messages', value: `${sessionData.messageCount || 0}`, inline: true },
+                { name: 'Last Activity', value: lastActivityDate.toLocaleString(), inline: false }
+            );
+        } else {
+            sessionEmbed.setDescription('No active session in this channel. Send a message to start one!');
+        }
+        
+        await message.reply({ embeds: [sessionEmbed] });
+        return;
+    }
+    
+    if (userQuery.toLowerCase() === 'reset session') {
+        const oldSession = channelSessions.get(message.channel.id);
+        if (oldSession) {
+            channelSessions.delete(message.channel.id);
+            saveSessions();
+            await message.reply(`🔄 Session ${oldSession.sessionId} has been reset. A new session will be created on the next message.`);
+        } else {
+            await message.reply('ℹ️ No active session to reset in this channel.');
+        }
+        return;
+    }
+    
+    if (userQuery.toLowerCase() === 'list sessions') {
+        // Admin only command
+        if (!message.member?.permissions.has('Administrator')) {
+            await message.reply('🔒 This command requires administrator permissions.');
+            return;
+        }
+        
+        const sessionList = Array.from(channelSessions.entries())
+            .map(([channelId, data]) => {
+                const channel = message.guild?.channels.cache.get(channelId);
+                return {
+                    channel: channel?.name || `Unknown (${channelId})`,
+                    sessionId: data.sessionId.substring(0, 8) + '...',
+                    lastActivity: new Date(data.lastActivity).toLocaleString(),
+                    messages: data.messageCount || 0
+                };
+            })
+            .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
+        
+        const listEmbed = new EmbedBuilder()
+            .setColor(0x00D9FF)
+            .setTitle('📊 Active Sessions')
+            .setDescription(`Total sessions: ${channelSessions.size}`)
+            .setTimestamp();
+        
+        if (sessionList.length > 0) {
+            sessionList.slice(0, 10).forEach(session => {
+                listEmbed.addFields({
+                    name: `#${session.channel}`,
+                    value: `ID: \`${session.sessionId}\`\nMessages: ${session.messages}\nLast: ${session.lastActivity}`,
+                    inline: true
+                });
+            });
+            
+            if (sessionList.length > 10) {
+                listEmbed.setFooter({ text: `Showing 10 of ${sessionList.length} sessions` });
+            }
+        }
+        
+        await message.reply({ embeds: [listEmbed] });
+        return;
+    }
+    
+    if (userQuery.toLowerCase() === 'debug') {
+        try {
+            // Read last 10 errors from log file
+            if (fs.existsSync(ERROR_LOG_PATH)) {
+                const logContent = fs.readFileSync(ERROR_LOG_PATH, 'utf8');
+                const errors = logContent.trim().split('\n').slice(-10).map(line => {
+                    try {
+                        return JSON.parse(line);
+                    } catch {
+                        return null;
+                    }
+                }).filter(Boolean);
+                
+                if (errors.length === 0) {
+                    await message.reply('✅ No recent errors found!');
+                    return;
+                }
+                
+                const debugEmbed = new EmbedBuilder()
+                    .setColor(0xFF0000)
+                    .setTitle('🐛 Recent Errors (Last 10)')
+                    .setDescription('Most recent errors from the bot:')
+                    .setTimestamp();
+                
+                errors.slice(-5).forEach((error) => {
+                    const timestamp = new Date(error.timestamp).toLocaleTimeString();
+                    const context = error.context || 'Unknown';
+                    const errorMsg = error.error?.message || 'Unknown error';
+                    
+                    debugEmbed.addFields({
+                        name: `${timestamp} - ${context}`,
+                        value: `\`\`\`${errorMsg.substring(0, 200)}\`\`\``,
+                        inline: false
+                    });
+                });
+                
+                await message.reply({ embeds: [debugEmbed] });
+            } else {
+                await message.reply('✅ No error log found. The bot hasn\'t encountered any errors yet!');
+            }
+        } catch (error) {
+            await message.reply('❌ Failed to read error log: ' + error.message);
+        }
+        return;
+    }
+    
+    if (userQuery.toLowerCase() === 'status') {
+        const contextAge = contextsLastLoaded ? 
+            `${Math.floor((Date.now() - contextsLastLoaded) / 1000 / 60)} minutes ago` : 
+            'Not loaded';
+            
+        const statusEmbed = new EmbedBuilder()
+            .setColor(0x00FF00)
+            .setTitle('🤖 Bot Status')
+            .setDescription('Current bot configuration and status')
+            .addFields(
+                { name: '⏱️ Timeout', value: `${CONFIG.QUERY_TIMEOUT / 1000} seconds`, inline: true },
+                { name: '🔄 Max Turns', value: `${CONFIG.MAX_TURNS}`, inline: true },
+                { name: '📁 Working Dir', value: `${CONFIG.CWD}`, inline: false },
+                { name: '🛠️ Debug Mode', value: process.env.DEBUG === 'true' ? 'Enabled' : 'Disabled', inline: true },
+                { name: '📊 Active Conversations', value: `${conversations.size}`, inline: true },
+                { name: '🧠 Context', value: baseContext.version ? `v${baseContext.version} (loaded ${contextAge})` : 'Not loaded', inline: true },
+                { name: '📂 Channel Contexts', value: `${channelContexts.size} loaded`, inline: true }
+            )
+            .setTimestamp();
+        
+        await message.reply({ embeds: [statusEmbed] });
+        return;
+    }
+    
+    if (userQuery.toLowerCase() === 'refresh-context') {
+        refreshAllContexts();
+        const channelContext = loadChannelContext(message.channel.id);
+        // Also refresh JIRA context
+        jiraContext = null;
+        jiraContextLoaded = null;
+        await getJiraContext();
+        await message.reply(`✅ All contexts refreshed! Base v${baseContext.version}, Channel: ${channelContext.channelName || 'base'}, JIRA: ${jiraContext ? 'loaded' : 'not found'}`);
+        return;
+    }
+    
+    if (userQuery.toLowerCase() === 'show-context') {
+        const channelContext = loadChannelContext(message.channel.id);
+        
+        if (!channelContext || !channelContext.version) {
+            await message.reply('📋 Using base context only. No channel-specific context configured.');
+            return;
+        }
+        
+        const contextEmbed = new EmbedBuilder()
+            .setColor(0x5865F2)
+            .setTitle(`🧠 Channel Context: ${channelContext.channelName || message.channel.name}`)
+            .setDescription(`Version ${channelContext.version}\nPurpose: ${channelContext.purpose || 'General'}`)
+            .addFields([
+                { 
+                    name: '📍 Channel Info', 
+                    value: `ID: ${channelContext.channelId || message.channel.id}\n` +
+                           `Type: ${channelContext.type || 'standard'}`,
+                    inline: true 
+                }
+            ]);
+            
+        // Add channel-specific fields
+        if (channelContext.context?.jira) {
+            contextEmbed.addFields({
+                name: '🎯 JIRA Settings',
+                value: `Instance: ${channelContext.context.jira.instance || 'Default'}\n` +
+                       `Project: ${channelContext.context.jira.defaultProject || 'None'}`,
+                inline: true
+            });
+        }
+        
+        if (channelContext.context?.crossReferences) {
+            const refs = Object.entries(channelContext.context.crossReferences)
+                .map(([name, id]) => `${name}: <#${id}>`)
+                .join('\n');
+            contextEmbed.addFields({
+                name: '🔗 Related Channels',
+                value: refs || 'None',
+                inline: false
+            });
+        }
+            
+        contextEmbed.setFooter({ text: 'Use @Dot refresh-context to reload' })
+            .setTimestamp();
+            
+        await message.reply({ embeds: [contextEmbed] });
+        return;
+    }
+    
+    if (userQuery.toLowerCase() === 'show-jira') {
+        const jiraData = await getJiraContext();
+        if (!jiraData || Object.keys(jiraData.projects || {}).length === 0) {
+            await message.reply('❌ No JIRA context loaded. Make sure jira-context.json exists and is properly configured.');
+            return;
+        }
+        
+        const jiraEmbed = new EmbedBuilder()
+            .setColor(0x0052CC)
+            .setTitle('🎯 JIRA Context')
+            .setDescription(`Instance: ${jiraData.instance}`)
+            .addFields([
+                {
+                    name: '📁 Projects',
+                    value: Object.entries(jiraData.projects || {})
+                        .map(([key, proj]) => `${key}: ${proj.name}`)
+                        .join('\n') || 'None configured',
+                    inline: false
+                },
+                {
+                    name: '👥 User Mappings',
+                    value: Object.entries(jiraData.userMappings || {})
+                        .map(([discord, user]) => `<@${discord}> → ${user.displayName}`)
+                        .join('\n') || 'None configured',
+                    inline: false
+                },
+                {
+                    name: '📋 Issue Types',
+                    value: Object.keys(jiraData.issueTypes || {}).join(', ') || 'None',
+                    inline: true
+                }
+            ])
+            .setFooter({ text: `Last updated: ${jiraData.lastUpdated || 'Unknown'}` })
+            .setTimestamp();
+            
+        await message.reply({ embeds: [jiraEmbed] });
+        return;
+    }
+    
     if (!userQuery) {
         await message.reply('Hi! I\'m Dot, powered by Claude AI. Just mention me with your question!');
         return;
@@ -251,37 +1268,230 @@ client.on(Events.MessageCreate, async message => {
         
         // Get conversation context
         const channelId = message.channel.id;
-        let context = conversations.get(channelId) || [];
+        let conversationContext = conversations.get(channelId) || [];
         
-        // Format the query with user info and context about Discord
-        const formattedQuery = `[${message.author.username}]: ${userQuery}
-        
-Context: You are in Discord server "${message.guild?.name || 'DM'}" (ID: ${message.guild?.id || 'DM'}) in channel #${message.channel.name || 'DM'} (ID: ${message.channel.id}).
-Server ID: ${message.guild?.id || 'N/A'}
-Channel ID: ${message.channel.id}
-User ID: ${message.author.id}
-You have access to MCP tools for Discord, JIRA, Confluence, Gmail, Google Calendar, and Google Drive.
-When using Discord MCP tools, use these IDs directly.`;
-        
-        // Query Claude - this will now handle streaming internally
-        const response = await queryClaudeSDK(formattedQuery, context, message);
-        
-        // Update context with the final response
-        if (response) {
-            context.push(
-                { role: message.author.username, content: userQuery },
-                { role: 'Claude', content: response }
-            );
-            
-            // Keep only last N messages
-            if (context.length > CONFIG.MAX_CONTEXT_MESSAGES * 2) {
-                context = context.slice(-CONFIG.MAX_CONTEXT_MESSAGES * 2);
-            }
-            
-            conversations.set(channelId, context);
+        // Fetch last 50 messages from channel
+        let recentMessages = [];
+        try {
+            const messages = await message.channel.messages.fetch({ limit: 50, before: message.id });
+            recentMessages = Array.from(messages.values())
+                .reverse() // Oldest first
+                .map(msg => ({
+                    author: msg.author.username,
+                    content: msg.content,
+                    timestamp: msg.createdAt.toISOString()
+                }))
+                .filter(msg => msg.content); // Remove empty messages
+            console.log(`📜 Fetched ${recentMessages.length} recent messages from channel`);
+        } catch (error) {
+            console.error('Failed to fetch recent messages:', error);
         }
         
-        console.log(`✅ Streaming completed`);
+        // Load channel-specific context
+        const channelContext = loadChannelContext(channelId);
+        
+        // Check if JIRA context is needed
+        let jiraContextData = null;
+        if (mentionsJira(userQuery)) {
+            jiraContextData = await getJiraContext();
+            console.log('🎯 JIRA context loaded due to keyword detection');
+        }
+        
+        // Build minimal context summary to reduce payload
+        let contextSummary = '';
+        if (channelContext && channelContext.version) {
+            // Only include essential information
+            const essentials = {
+                channel: channelContext.channelName,
+                purpose: channelContext.purpose
+            };
+            
+            // Add JIRA info only for JIRA-related channels
+            if (channelContext.context?.jira && (channelContext.channelName?.includes('jira') || channelContext.channelName?.includes('standup'))) {
+                essentials.jira = {
+                    instance: channelContext.context.jira.instance,
+                    project: channelContext.context.jira.defaultProject
+                };
+            }
+            
+            // Add cross references only if explicitly needed
+            if (channelContext.context?.crossReferences && Object.keys(channelContext.context.crossReferences).length < 5) {
+                essentials.relatedChannels = channelContext.context.crossReferences;
+            }
+            
+            contextSummary = `
+## Channel Context
+${JSON.stringify(essentials, null, 2)}`;
+        }
+        
+        // Build message history summary
+        let messageHistory = '';
+        if (recentMessages.length > 0) {
+            const historyText = recentMessages.map(m => `[${m.timestamp.split('T')[1].split('.')[0]}] ${m.author}: ${m.content}`).join('\n');
+            messageHistory = `
+## Recent Channel Messages (Last ${recentMessages.length})
+${historyText}`;
+            
+            // Warn if message history is very large
+            if (historyText.length > 20000) {
+                console.warn(`⚠️ Large message history: ${historyText.length} characters`);
+            }
+        }
+        
+        // Build JIRA context if needed
+        let jiraContextSummary = '';
+        if (jiraContextData) {
+            jiraContextSummary = `
+## JIRA Context
+Instance: ${jiraContextData.instance}
+Projects: ${JSON.stringify(jiraContextData.projects || {}, null, 2)}
+Issue Types: ${JSON.stringify(jiraContextData.issueTypes || {}, null, 2)}
+User Mappings: ${JSON.stringify(jiraContextData.userMappings || {}, null, 2)}`;
+        }
+        
+        // Check for existing session
+        const existingSession = channelSessions.get(channelId);
+        let sessionInfo = '';
+        if (existingSession && existingSession.sessionId) {
+            sessionInfo = `\n## Session Context\n- Session ID: ${existingSession.sessionId}\n- Previous messages in session: ${existingSession.messageCount || 0}\n- Session started: ${new Date(existingSession.lastActivity).toLocaleString()}\n`;
+        }
+        
+        // Format the query with user info and channel-specific context
+        const formattedQuery = `[${message.author.username}]: ${userQuery}
+
+## Current Location
+- Server: "${message.guild?.name || 'DM'}" (ID: ${message.guild?.id || 'DM'})
+- Channel: #${message.channel.name || 'DM'} (ID: ${message.channel.id})
+- User: ${message.author.username} (ID: ${message.author.id})
+${sessionInfo}${messageHistory}
+${contextSummary}
+${jiraContextSummary}
+## Instructions
+You have access to MCP tools. Use the context above to understand the conversation and avoid unnecessary API calls.
+${jiraContextData ? 'JIRA context has been preloaded - use it to create tickets directly without discovery.' : ''}`;
+        
+        // Check if this is a ticket creation request
+        const isTicketRequest = mentionsJira(userQuery) && 
+            (userQuery.toLowerCase().includes('create') || 
+             userQuery.toLowerCase().includes('open') || 
+             userQuery.toLowerCase().includes('new ticket') ||
+             userQuery.toLowerCase().includes('write a ticket'));
+        
+        if (isTicketRequest) {
+            console.log('🎫 Ticket creation request detected');
+            // First, ask Claude to analyze what tickets should be created
+            const analysisPrompt = `${formattedQuery}
+
+## Special Instructions for Ticket Analysis
+DO NOT create any tickets yet! Instead, analyze what tickets SHOULD be created and return ONLY a JSON array.
+
+Your response must be ONLY a JSON array (no other text) with ticket suggestions. Example format:
+[
+  {
+    "projectKey": "DOT",
+    "projectName": "dotfun",
+    "issueType": "Task",
+    "summary": "Implement notification system",
+    "description": "Create a system that...",
+    "priority": "Medium",
+    "assignee": null,
+    "labels": ["notifications", "integration"]
+  }
+]
+
+For each suggested ticket include:
+- projectKey: The JIRA project key from the context
+- projectName: The project name
+- issueType: Task, Bug, Story, Epic, or Subtask
+- summary: Clear, concise title
+- description: Detailed description with acceptance criteria
+- priority: Highest, High, Medium, or Low
+- assignee: {jiraAccountId, displayName} or null
+- labels: Array of relevant labels
+
+IMPORTANT: Return ONLY the JSON array, no explanatory text before or after.`;
+            
+            try {
+                // Get ticket suggestions from Claude
+                const analysisResponse = await queryClaudeSDK(analysisPrompt, conversationContext, message);
+                console.log('📝 Ticket analysis response received:', analysisResponse.substring(0, 200));
+                
+                // Try to parse JSON from the response
+                let ticketSuggestions = [];
+                try {
+                    // Extract JSON from the response (Claude might include extra text)
+                    const jsonMatch = analysisResponse.match(/\[\s*\{[\s\S]*\}\s*\]/); 
+                    if (jsonMatch) {
+                        ticketSuggestions = JSON.parse(jsonMatch[0]);
+                    }
+                } catch (parseError) {
+                    console.error('Failed to parse ticket suggestions:', parseError);
+                    console.log('Response that failed to parse:', analysisResponse);
+                    
+                    // Try a simpler approach - ask Claude to create tickets with a clearer prompt
+                    const fallbackPrompt = formattedQuery + '\n\nIMPORTANT: Create JIRA tickets for the requested items. Use the MCP JIRA tools to create the tickets and show what was created.';
+                    await queryClaudeSDK(fallbackPrompt, conversationContext, message);
+                    return;
+                }
+                
+                // Show ticket previews for each suggestion
+                for (const ticket of ticketSuggestions) {
+                    // Check if we already handled a similar ticket
+                    if (wasTicketAlreadyHandled(message.channel.id, ticket.summary)) {
+                        await message.channel.send(`ℹ️ Skipping duplicate ticket: "${ticket.summary}" (similar ticket already handled)`);
+                        continue;
+                    }
+                    
+                    // Ensure ticket has all required fields with defaults
+                    const normalizedTicket = {
+                        ...ticket,
+                        projectKey: ticket.projectKey || 'DOT',
+                        projectName: ticket.projectName || 'dotfun',
+                        issueType: ticket.issueType || 'Task',
+                        summary: ticket.summary || 'New ticket',
+                        description: ticket.description || '',
+                        priority: ticket.priority || 'Medium',
+                        assignee: ticket.assignee || null,
+                        labels: ticket.labels || []
+                    };
+                    
+                    // Create preview embed
+                    const embed = createTicketPreviewEmbed(normalizedTicket);
+                    const buttons = createTicketActionButtons(normalizedTicket.id || Date.now().toString());
+                    
+                    // Send preview message
+                    const previewMessage = await message.channel.send({
+                        embeds: [embed],
+                        components: [buttons]
+                    });
+                    
+                    // Store normalized ticket data for button handler
+                    pendingTickets.set(previewMessage.id, normalizedTicket);
+                }
+                
+                // If no tickets were suggested
+                if (ticketSuggestions.length === 0) {
+                    console.log('📭 No ticket suggestions generated');
+                    await message.channel.send('ℹ️ No tickets needed based on this conversation.');
+                } else {
+                    console.log(`🎫 Generated ${ticketSuggestions.length} ticket preview(s)`);
+                }
+                
+            } catch (error) {
+                console.error('Error analyzing ticket request:', error);
+                // Fall back to normal query
+                await queryClaudeSDK(formattedQuery, conversationContext, message);
+            }
+            
+        } else {
+            // Normal query - not a ticket request
+            await queryClaudeSDK(formattedQuery, conversationContext, message);
+        }
+        
+        // Context is already updated within queryClaudeSDK function
+        // No need to update it here since the response is handled internally
+        
+        // Response handling completed
         
     } catch (error) {
         console.error('❌ Error:', error);

@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "savedAt": "2025-06-30T01:58:55.421Z",
+  "sessions": [
+    [
+      "1319782530249003100",
+      {
+        "sessionId": "4cbe61eb-84fd-4f2b-b3ad-8a38a9f359cb",
+        "lastActivity": 1751247134711,
+        "messageCount": 4,
+        "channelName": "ai-news",
+        "guildName": "DotFun"
+      }
+    ],
+    [
+      "1358829971480510555",
+      {
+        "sessionId": "6efa40a7-1f81-4d61-8d88-c633301aaad6",
+        "lastActivity": 1751248735421,
+        "messageCount": 15,
+        "channelName": "Video 1: The Doom Loop",
+        "guildName": "DotFun"
+      }
+    ]
+  ]
+}

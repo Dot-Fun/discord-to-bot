@@ -1,0 +1,209 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2025-06-29T21:30:00.000Z",
+  "instance": "https://dotfun.atlassian.net",
+  "cloudId": "840697aa-7447-4ad1-bd0e-3f528d107624",
+  "projects": {
+    "DOT": {
+      "key": "DOT",
+      "name": "DotBot Workspace",
+      "id": "10013"
+    },
+    "EDAPHIC": {
+      "key": "EDAPHIC",
+      "name": "Edaphic Solutions",
+      "id": "10014"
+    },
+    "FLYGHT": {
+      "key": "FLYGHT",
+      "name": "Flyght",
+      "id": "10016"
+    },
+    "HOME": {
+      "key": "HOME",
+      "name": "Home",
+      "id": "10008"
+    },
+    "LEORA": {
+      "key": "LEORA",
+      "name": "Leora Home Health",
+      "id": "10012"
+    },
+    "MONEY": {
+      "key": "MONEY",
+      "name": "Money Portal",
+      "id": "10009"
+    },
+    "RAD": {
+      "key": "RAD",
+      "name": "Reasearch & Development",
+      "id": "10015"
+    },
+    "STORY": {
+      "key": "STORY",
+      "name": "Storybooks Project",
+      "id": "10011"
+    },
+    "WEB": {
+      "key": "WEB",
+      "name": "DotFun Website",
+      "id": "10006"
+    },
+    "XUR": {
+      "key": "XUR",
+      "name": "Xurrent",
+      "id": "10010"
+    }
+  },
+  "issueTypes": {
+    "Story": {
+      "name": "Story",
+      "id": "10024",
+      "description": "A user story",
+      "fields": {
+        "required": [
+          "summary",
+          "description"
+        ],
+        "optional": [
+          "storyPoints",
+          "acceptance_criteria",
+          "labels"
+        ]
+      },
+      "template": {
+        "summary": "[Story] ",
+        "description": "As a [user type], I want [functionality] so that [benefit].\n\n**Acceptance Criteria:**\n- [ ] Criterion 1\n- [ ] Criterion 2",
+        "issuetype": {
+          "name": "Story"
+        }
+      }
+    },
+    "Task": {
+      "name": "Task",
+      "id": "10022",
+      "description": "A task that needs to be done",
+      "fields": {
+        "required": [
+          "summary",
+          "description"
+        ],
+        "optional": [
+          "timeTracking",
+          "labels"
+        ]
+      },
+      "template": {
+        "summary": "[Task] ",
+        "description": "**Objective:**\n\n**Steps:**\n1. \n2. ",
+        "issuetype": {
+          "name": "Task"
+        }
+      }
+    },
+    "Bug": {
+      "name": "Bug",
+      "id": "10023",
+      "description": "A defect or issue",
+      "fields": {
+        "required": [
+          "summary",
+          "description",
+          "priority"
+        ],
+        "optional": [
+          "affectsVersion",
+          "environment",
+          "steps_to_reproduce"
+        ]
+      },
+      "template": {
+        "summary": "[Bug] ",
+        "description": "**Description:**\n\n**Steps to Reproduce:**\n1. \n2. \n\n**Expected Result:**\n\n**Actual Result:**\n\n**Environment:**",
+        "issuetype": {
+          "name": "Bug"
+        },
+        "priority": {
+          "name": "Medium"
+        }
+      }
+    },
+    "Epic": {
+      "name": "Epic",
+      "id": "10020",
+      "description": "A large body of work",
+      "fields": {
+        "required": [
+          "summary",
+          "description",
+          "epicName"
+        ],
+        "optional": [
+          "epicColor"
+        ]
+      },
+      "template": {
+        "summary": "[Epic] ",
+        "description": "**Epic Overview:**\n\n**Business Value:**\n\n**Success Metrics:**",
+        "issuetype": {
+          "name": "Epic"
+        }
+      }
+    },
+    "Subtask": {
+      "name": "Subtask",
+      "id": "10025",
+      "description": "A subtask of another issue",
+      "fields": {
+        "required": [
+          "summary",
+          "description",
+          "parent"
+        ],
+        "optional": [
+          "timeTracking"
+        ]
+      },
+      "template": {
+        "summary": "[Subtask] ",
+        "description": "**Task Details:**\n\n**Completion Criteria:**",
+        "issuetype": {
+          "name": "Subtask"
+        }
+      }
+    }
+  },
+  "userMappings": {
+    "90619136358486016": {
+      "jiraAccountId": "712020:2e335783-b484-41f3-a413-acec3ba22813",
+      "displayName": "Alvin",
+      "email": "alvin@dotfun.com"
+    },
+    "148848167171915776": {
+      "jiraAccountId": "712020:d4306f24-fc93-487a-977f-ca16bf76881b",
+      "displayName": "David",
+      "email": "david@dotfun.com"
+    },
+    "619134193426759712": {
+      "jiraAccountId": "712020:bc6bf345-24f0-4476-8366-f1bd45d95156",
+      "displayName": "Adnan",
+      "email": "adnan@dotfun.com"
+    },
+    "1117891081103741039": {
+      "jiraAccountId": "712020:c3f9a775-cbae-4f89-9fe5-c1569edd2aa5",
+      "displayName": "Perl",
+      "email": "perl@dotfun.com"
+    }
+  },
+  "commonQueries": {
+    "currentSprint": "sprint in openSprints()",
+    "myWork": "assignee = currentUser() AND resolution = Unresolved",
+    "recentlyCreated": "created >= -7d ORDER BY created DESC",
+    "highPriority": "priority in (Highest, High) AND resolution = Unresolved"
+  },
+  "customFields": {
+    "storyPoints": "customfield_10016",
+    "epicLink": "customfield_10014",
+    "sprint": "customfield_10020"
+  }
+}
