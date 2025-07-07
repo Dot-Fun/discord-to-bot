@@ -48,12 +48,18 @@ const client = new Client({
 
 // Configuration
 const CONFIG = {
-    MAX_RESPONSE_LENGTH: 2000,
-    MAX_CONTEXT_MESSAGES: 10,
-    MAX_TURNS: 5, // Increased to allow more tool use
+    MAX_RESPONSE_LENGTH: parseInt(process.env.MAX_RESPONSE_LENGTH) || 2000,
+    MAX_CONTEXT_MESSAGES: parseInt(process.env.MAX_CONTEXT_MESSAGES) || 10,
+    MAX_TURNS: parseInt(process.env.MAX_TURNS) || 20,
     CWD: process.cwd(), // Working directory for Claude to find .mcp.json
-    QUERY_TIMEOUT: 300000 // 5 minute timeout for Claude queries (increased from 2)
+    QUERY_TIMEOUT: parseInt(process.env.QUERY_TIMEOUT) || 300000 // 5 minute timeout for Claude queries
 };
+
+console.log('🔧 Bot Configuration:', {
+    MAX_TURNS: CONFIG.MAX_TURNS,
+    MAX_CONTEXT_MESSAGES: CONFIG.MAX_CONTEXT_MESSAGES,
+    QUERY_TIMEOUT: `${CONFIG.QUERY_TIMEOUT / 1000}s`
+});
 
 // Slash commands array
 const commands = [
