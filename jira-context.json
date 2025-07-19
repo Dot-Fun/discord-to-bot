@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastUpdated": "2025-06-29T21:30:00.000Z",
+  "lastUpdated": "2025-07-18T00:00:00.000Z",
   "instance": "https://dotfun.atlassian.net",
   "cloudId": "840697aa-7447-4ad1-bd0e-3f528d107624",
   "projects": {
@@ -53,6 +53,11 @@
       "key": "XUR",
       "name": "Xurrent",
       "id": "10010"
+    },
+    "PHO": {
+      "key": "PHO",
+      "name": "Pheonix",
+      "id": "10147"
     }
   },
   "issueTypes": {

@@ -132,25 +132,29 @@
 
 ### Bot Members
 
-- **Dot** (1387839680724209746) - Role: 1387891680249905326
-- **edaphicsolutions** (1358969018635128895) - Role: 1327005578865934558
-- **Tretta Bot** (1321218432913379461) - Role: 1378035053405405307
-- **dotfun-2jiraticket** (1315824787205132300) - Role: 1319699946630414430
+- **Dot** (1387839680724209746)
+- **edaphicsolutions** (1358969018635128895)
+- **Tretta Bot** (1321218432913379461)
+- **dotfun-2jiraticket** (1315824787205132300)
 - **MyJiraBot** (1164194962901057546)
-- **Jiri** (1040534757680889886) - Role: 1350101917967192109
-- **MEE6** (159985870458322944) - Role: 1315809071919792251
+- **Jiri** (1040534757680889886)
+- **MEE6** (159985870458322944)
 
 ### Human Members
 
-- **enso0731** (90619136358486016) - Role: 1309290494790205521 (Server Owner)
-- **dotfundavid** (148848167171915776) - Roles: 1342388298554802188, 1331728803658993734, 1309290494790205521
-- **pepperperl** (1117891081103741039) - Roles: 1342388298554802188, 1309290494790205521
-- **tanishavenkani_76150** (1313815953825468457) - Roles: 1331738297642389514, 1331728803658993734
-- **priyankamaran** (1057002192617341049) - Roles: 1331738297642389514, 1331728803658993734
-- **dhavalmodidesign** (859619154126176287) - Roles: 1331738297642389514, 1326942474706489344, 1331728803658993734
-- **adnanfarooqui** (619134193426759712) - Roles: 1331738297642389514, 1326942474706489344, 1331728803658993734
-- **me.chinmay17** (602164873991946260) - Roles: 1331738297642389514, 1331728803658993734
-- **shanesayers** (482969034909024276) - Roles: 1331738297642389514, 1326942474706489344, 1331728803658993734
+#### Team Member Directory
+
+| Discord Username         | Real Name       | User ID             | @Mention Format          |
+| ------------------------ | --------------- | ------------------- | ------------------------ |
+| **enso0731**             | Alvin Cheung    | 90619136358486016   | `<@90619136358486016>`   |
+| **dotfundavid**          | David Pratter   | 148848167171915776  | `<@148848167171915776>`  |
+| **pepperperl**           | Zachary Perl    | 1117891081103741039 | `<@1117891081103741039>` |
+| **tanishavenkani_76150** | Tanisha Venkani | 1313815953825468457 | `<@1313815953825468457>` |
+| **priyankamaran**        | Priyanka Maran  | 1057002192617341049 | `<@1057002192617341049>` |
+| **dhavalmodidesign**     | Dhaval Modi     | 859619154126176287  | `<@859619154126176287>`  |
+| **adnanfarooqui**        | Adnan Farooqui  | 619134193426759712  | `<@619134193426759712>`  |
+| **me.chinmay17**         | Chinmay         | 602164873991946260  | `<@602164873991946260>`  |
+| **shanesayers**          | Shane Sayers    | 482969034909024276  | `<@482969034909024276>`  |
 
 ## Quick Reference IDs
 
@@ -179,3 +183,27 @@ Use these channel IDs when sending project-specific updates:
 - JIRA integration appears to be active with dedicated channels and bots
 - Multiple client projects are organized under categories
 - Voice channels are available for team meetings
+
+## How to @Mention Team Members
+
+When sending Discord messages via the MCP tools, use the following format to mention team members:
+
+```
+<@USER_ID>
+```
+
+For example:
+
+- To mention David: `<@148848167171915776>`
+- To mention Tanisha: `<@1313815953825468457>`
+- To mention Dhaval: `<@859619154126176287>`
+
+### Example Discord Message with Mentions:
+
+```
+Hey <@148848167171915776> and <@1313815953825468457>,
+The latest JIRA ticket DOT-123 has been assigned to <@859619154126176287>.
+Please review when you have a moment!
+```
+
+This will properly notify the mentioned users in Discord.

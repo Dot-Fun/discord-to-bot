@@ -1,74 +1,74 @@
 {
   "version": "1.0",
-  "savedAt": "2025-06-30T20:32:14.078Z",
+  "savedAt": "2025-07-19T04:26:08.870Z",
   "sessions": [
     [
-      "1319782530249003100",
+      "1356725253010620616",
       {
-        "sessionId": "4cbe61eb-84fd-4f2b-b3ad-8a38a9f359cb",
-        "lastActivity": 1751247134711,
-        "messageCount": 4,
-        "channelName": "ai-news",
+        "sessionId": "d4352a84-dd07-4b15-a1cb-74819083f063",
+        "lastActivity": 1752295206794,
+        "messageCount": 17,
+        "channelName": "xurrent-run-good",
         "guildName": "DotFun"
       }
     ],
     [
-      "1358829971480510555",
+      "1391861716400214047",
       {
-        "sessionId": "5756b143-b0c9-4b81-bef5-1035760f1227",
-        "lastActivity": 1751249319111,
+        "sessionId": "97dfa816-4888-404e-9bdb-bd688cedbcd5",
+        "lastActivity": 1752899168870,
+        "messageCount": 10,
+        "channelName": "phoenix",
+        "guildName": "DotFun"
+      }
+    ],
+    [
+      "1394087144024309903",
+      {
+        "sessionId": "17a69de1-c5c1-4bdb-9a0b-8889a33d3317",
+        "lastActivity": 1752449521108,
+        "messageCount": 8,
+        "channelName": "phoenix-project",
+        "guildName": "DotFun"
+      }
+    ],
+    [
+      "1331836729472319569",
+      {
+        "sessionId": "9e0ed4ca-a6dc-4d00-b684-8f9ee8ec2705",
+        "lastActivity": 1752515117435,
+        "messageCount": 8,
+        "channelName": "xurrent-feel-good",
+        "guildName": "DotFun"
+      }
+    ],
+    [
+      "1331838928910680114",
+      {
+        "sessionId": "fd76b8b1-d554-4100-b2d4-6c625ee7bdc0",
+        "lastActivity": 1752511199489,
         "messageCount": 12,
-        "channelName": "Video 1: The Doom Loop",
+        "channelName": "flyght-look-good",
         "guildName": "DotFun"
       }
     ],
     [
-      "1306745935895728276",
+      "1341078754830712892",
       {
-        "sessionId": "0baf21f2-d4d9-4c2c-83e6-bf77d1dab130",
-        "lastActivity": 1751257920893,
-        "messageCount": 4,
-        "channelName": "home-base",
+        "sessionId": "87e715e5-80d0-4e65-bfb5-a75650fd6c89",
+        "lastActivity": 1752847931645,
+        "messageCount": 14,
+        "channelName": "dotfun-team-standup",
         "guildName": "DotFun"
       }
     ],
     [
-      "1309312321616613526",
+      "1309313580142690324",
       {
-        "sessionId": "96b4cedd-e285-4bc2-80dc-c7f6b65f4103",
-        "lastActivity": 1751256917961,
-        "messageCount": 5,
-        "channelName": "run-good",
-        "guildName": "DotFun"
-      }
-    ],
-    [
-      "1384901766386155631",
-      {
-        "sessionId": "ca371cd1-f75a-469b-bd3f-02eecf5e9196",
-        "lastActivity": 1751308110076,
-        "messageCount": 20,
-        "channelName": "creativex",
-        "guildName": "DotFun"
-      }
-    ],
-    [
-      "1319457944600973393",
-      {
-        "sessionId": "921db090-502a-4735-b1e7-0524960b1b76",
-        "lastActivity": 1751314401971,
-        "messageCount": 3,
-        "channelName": "test",
-        "guildName": "DotFun"
-      }
-    ],
-    [
-      "1331495084629430282",
-      {
-        "sessionId": "08c97d8c-291b-45dc-a92f-8ff663c477dc",
-        "lastActivity": 1751315534078,
-        "messageCount": 22,
-        "channelName": "xurrent-look-good",
+        "sessionId": "4335051a-5c1c-4d9e-92b9-c77ebdbd9eec",
+        "lastActivity": 1752859170262,
+        "messageCount": 21,
+        "channelName": "money-portal",
         "guildName": "DotFun"
       }
     ]
