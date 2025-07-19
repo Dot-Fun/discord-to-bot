@@ -80,7 +80,8 @@
       "Bash(NODE_ENV=test jest --runInBand tests/discord-bot-sessions.test.js 2 >& 1)",
       "Bash(gh pr create:*)",
       "Bash(grep:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "mcp__gdrive__gdrive_read_file"
     ]
   },
   "enabledMcpjsonServers": [

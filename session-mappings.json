@@ -1,67 +1,7 @@
 {
   "version": "1.0",
-  "savedAt": "2025-07-14T17:45:17.435Z",
+  "savedAt": "2025-07-18T17:29:51.913Z",
   "sessions": [
-    [
-      "1331495084629430282",
-      {
-        "sessionId": "29c5e789-e9e5-4f15-8f98-b5d6db91bc38",
-        "lastActivity": 1752170946988,
-        "messageCount": 8,
-        "channelName": "xurrent-look-good",
-        "guildName": "DotFun"
-      }
-    ],
-    [
-      "1309313580142690324",
-      {
-        "sessionId": "3013a324-238f-4492-884a-6c8eb42c8ec2",
-        "lastActivity": 1751995219724,
-        "messageCount": 8,
-        "channelName": "money-portal",
-        "guildName": "DotFun"
-      }
-    ],
-    [
-      "1387657211915800636",
-      {
-        "sessionId": "315142eb-2282-4aba-a5a8-cfce17f5a1f2",
-        "lastActivity": 1752080705815,
-        "messageCount": 3,
-        "channelName": "dotbot",
-        "guildName": "DotFun"
-      }
-    ],
-    [
-      "1320899413593555036",
-      {
-        "sessionId": "8f9cbfbb-000b-491a-a3aa-78ee1b49ccd5",
-        "lastActivity": 1752069500912,
-        "messageCount": 4,
-        "channelName": "wheres-waldo",
-        "guildName": "DotFun"
-      }
-    ],
-    [
-      "1392436582451249152",
-      {
-        "sessionId": "eeb6c391-98ac-4e46-ab30-a1d00e7d80f1",
-        "lastActivity": 1752081196164,
-        "messageCount": 6,
-        "channelName": "7/9 tactical",
-        "guildName": "DotFun"
-      }
-    ],
-    [
-      "1331838977161957396",
-      {
-        "sessionId": "298aaae6-cbc3-4ce2-bb42-419477a00aa7",
-        "lastActivity": 1752084503337,
-        "messageCount": 21,
-        "channelName": "flyght-feel-good",
-        "guildName": "DotFun"
-      }
-    ],
     [
       "1356725253010620616",
       {
@@ -75,9 +15,9 @@
     [
       "1391861716400214047",
       {
-        "sessionId": "a63ceb11-6c44-483a-b540-1fed74a998d6",
-        "lastActivity": 1752433015518,
-        "messageCount": 11,
+        "sessionId": "47cea3a8-70ad-496f-835f-f4e5122a3a09",
+        "lastActivity": 1752859791913,
+        "messageCount": 4,
         "channelName": "phoenix",
         "guildName": "DotFun"
       }
@@ -109,6 +49,26 @@
         "lastActivity": 1752511199489,
         "messageCount": 12,
         "channelName": "flyght-look-good",
+        "guildName": "DotFun"
+      }
+    ],
+    [
+      "1341078754830712892",
+      {
+        "sessionId": "87e715e5-80d0-4e65-bfb5-a75650fd6c89",
+        "lastActivity": 1752847931645,
+        "messageCount": 14,
+        "channelName": "dotfun-team-standup",
+        "guildName": "DotFun"
+      }
+    ],
+    [
+      "1309313580142690324",
+      {
+        "sessionId": "4335051a-5c1c-4d9e-92b9-c77ebdbd9eec",
+        "lastActivity": 1752859170262,
+        "messageCount": 21,
+        "channelName": "money-portal",
         "guildName": "DotFun"
       }
     ]
